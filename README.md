@@ -137,6 +137,18 @@ When the server is running, you can access the API documentation at:
 
 See the [CLAUDE.md](CLAUDE.md) file for detailed documentation on how to add support for additional file types through the enrichment system.
 
+## Continuous Integration
+
+This project uses GitHub Actions for continuous integration to ensure Docker builds remain stable:
+
+- **Docker Build Validation**: Automatically runs on every PR and push to main that affects Docker-related files
+- **Validation Process**:
+  - Builds the Docker image to ensure all dependencies are installable
+  - Validates the docker-compose.yml file
+  - Fails early if any issues would prevent deployment
+
+You can see the workflow configuration in the `.github/workflows/docker-build.yml` file.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
