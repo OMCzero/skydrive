@@ -1,6 +1,11 @@
-# File Management System
+# OMCzero SkyDrive
 
-A modular and extensible file/media management system built with Python and FastAPI.
+> [!WARNING]
+> This is PRE-ALPHA software and should not be used in production.
+>
+> It is under active development, working towards a v0 release in the near future. Stay tuned for updates.
+
+
 
 ## Features
 
