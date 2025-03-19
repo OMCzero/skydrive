@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./static:/app/static
+      - shared_tmp:/tmp
+    environment:
+      - MEILISEARCH_HOST=http://meilisearch:7700
+      - MEILISEARCH_API_KEY=masterKey
+      - MEILISEARCH_INDEX=files
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - WHISPER_MODEL=turbo
+      - SKIP_OLLAMA_WARMUP=true
+      - ASSUME_OLLAMA_MODELS_EXIST=true
+    depends_on:
+      - redis
+      - meilisearch
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker:
+    build: .
+    command: python worker.py
+    volumes:
+      - ./uploads:/app/uploads
+      - shared_tmp:/tmp
+    environment:
+      - MEILISEARCH_HOST=http://meilisearch:7700
+      - MEILISEARCH_API_KEY=masterKey
+      - MEILISEARCH_INDEX=files
+      - REDIS_URL=redis://redis:6379/0
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - WHISPER_MODEL=turbo
+      - SKIP_OLLAMA_WARMUP=true
+      - ASSUME_OLLAMA_MODELS_EXIST=true
+    depends_on:
+      - redis
+      - meilisearch
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    ports:
+      - "7700:7700"
+    volumes:
+      - ./meili_data:/meili_data
+    environment:
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_MASTER_KEY=masterKey
+
+volumes:
+  redis_data:
+  shared_tmp:

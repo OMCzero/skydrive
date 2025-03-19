@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Management System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+        }
+        .upload-form {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .result {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            white-space: pre-wrap;
+            max-height: 500px;
+            overflow: auto;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .download-button {
+            background-color: #2196F3;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .download-button:hover {
+            background-color: #0b7dda;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        .system-status {
+            margin-bottom: 20px;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .status-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+        .status-available {
+            background-color: #4CAF50; /* Green */
+        }
+        .status-partial {
+            background-color: #FFC107; /* Amber */
+        }
+        .status-unavailable, .status-error {
+            background-color: #F44336; /* Red */
+        }
+        .status-message {
+            flex: 1;
+        }
+        .status-refresh {
+            font-size: 12px;
+            padding: 5px 10px;
+        }
+        .timestamp {
+            font-size: 12px;
+            color: #666;
+            margin-top: 10px;
+        }
+        .search-section {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .search-box {
+            display: flex;
+            margin-bottom: 15px;
+        }
+        .search-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px 0 0 4px;
+            font-size: 16px;
+        }
+        .search-button {
+            border-radius: 0 4px 4px 0;
+        }
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .filter-select {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-width: 150px;
+            margin-bottom: 8px;
+        }
+        .filter-group {
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+        .filter-group h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .filter-toggle {
+            background-color: #f5f5f5;
+            color: #333;
+            border: 1px solid #ddd;
+            margin-top: 10px;
+        }
+        #imageFiltersGroup, #textFiltersGroup {
+            display: none;
+        }
+        .search-results {
+            margin-top: 20px;
+        }
+        .result-item {
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            background-color: white;
+        }
+        .result-item:hover {
+            border-color: #4CAF50;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .result-title {
+            font-weight: bold;
+            font-size: 18px;
+            margin: 0;
+        }
+        .result-type {
+            padding: 3px 8px;
+            background-color: #e8e8e8;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        .result-summary {
+            margin-bottom: 10px;
+            color: #555;
+        }
+        .result-metadata {
+            font-size: 12px;
+            color: #888;
+            margin-top: 10px;
+        }
+        .metadata-group {
+            margin-bottom: 6px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .metadata-item {
+            display: inline-block;
+        }
+        .result-actions {
+            margin: 10px 0;
+            display: flex;
+            justify-content: flex-end;
+        }
+        .download-icon {
+            margin-right: 5px;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            margin-right: 5px;
+            border-radius: 5px 5px 0 0;
+        }
+        .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .empty-message {
+            color: #888;
+            text-align: center;
+            padding: 20px;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4CAF50;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Task status styles */
+        .task-status {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border-left: 5px solid #ccc;
+            background-color: #f5f5f5;
+        }
+        .task-status h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .task-status p {
+            margin: 5px 0;
+        }
+        .task-status.pending {
+            border-left-color: #FFC107; /* Amber */
+            background-color: #FFFDE7;
+        }
+        .task-status.processing {
+            border-left-color: #2196F3; /* Blue */
+            background-color: #E3F2FD;
+        }
+        .task-status.success {
+            border-left-color: #4CAF50; /* Green */
+            background-color: #E8F5E9;
+        }
+        .task-status.error {
+            border-left-color: #F44336; /* Red */
+            background-color: #FFEBEE;
+        }
+        .task-note {
+            background-color: #E8F5E9;
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 5px solid #4CAF50;
+        }
+        .result-data {
+            margin-top: 20px;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .result-data pre {
+            max-height: 400px;
+            overflow: auto;
+            white-space: pre-wrap;
+        }
+        .error-message {
+            margin-top: 20px;
+            background-color: #FFEBEE;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 5px solid #F44336;
+        }
+        
+        /* Tasks tab styles */
+        .tasks-section {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .task-filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        .tasks-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .task-card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+        }
+        .task-card:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        .task-card.pending {
+            border-left: 5px solid #FFC107; /* Amber */
+        }
+        .task-card.processing {
+            border-left: 5px solid #2196F3; /* Blue */
+        }
+        .task-card.success {
+            border-left: 5px solid #4CAF50; /* Green */
+        }
+        .task-card.error {
+            border-left: 5px solid #F44336; /* Red */
+        }
+        .task-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            gap: 10px;
+        }
+        .task-header h3 {
+            margin: 0;
+            flex: 1;
+            font-size: 16px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .task-status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .task-status-indicator.pending {
+            background-color: #FFC107; /* Amber */
+        }
+        .task-status-indicator.processing {
+            background-color: #2196F3; /* Blue */
+        }
+        .task-status-indicator.success {
+            background-color: #4CAF50; /* Green */
+        }
+        .task-status-indicator.error {
+            background-color: #F44336; /* Red */
+        }
+        .task-status-label {
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            background-color: #f5f5f5;
+        }
+        .task-details {
+            font-size: 13px;
+            color: #666;
+        }
+        .task-details p {
+            margin: 5px 0;
+        }
+        .task-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            gap: 10px;
+        }
+        .view-task-button {
+            background-color: #607D8B;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            flex: 1;
+        }
+        .view-task-button:hover {
+            background-color: #455A64;
+        }
+    </style>
+</head>
+<body>
+    <h1>File Management System</h1>
+    
+    <div class="system-status" id="systemStatus">
+        <h2>System Status <button id="refreshStatus" class="status-refresh">Refresh</button></h2>
+        <div id="statusContainer">
+            <p>Loading system status...</p>
+        </div>
+        <div class="timestamp" id="statusTimestamp"></div>
+    </div>
+    
+    <div class="tabs">
+        <div class="tab active" data-tab="upload">Upload</div>
+        <div class="tab" data-tab="tasks">Tasks</div>
+        <div class="tab" data-tab="search">Search</div>
+    </div>
+    
+    <div id="upload-tab" class="tab-content active">
+        <div class="upload-form">
+            <h2>Upload File</h2>
+            <form id="uploadForm">
+                <input type="file" id="fileInput" required>
+                <button type="submit">Upload and Process</button>
+            </form>
+        </div>
+        
+        <h2>Results</h2>
+        <div class="result" id="resultContainer">
+            <p>Upload a file to see the results...</p>
+        </div>
+    </div>
+
+    <div id="tasks-tab" class="tab-content">
+        <div class="tasks-section">
+            <h2>Recent Tasks <button id="refreshTasks" class="status-refresh">Refresh</button></h2>
+            
+            <div class="task-filters">
+                <select id="taskStatusFilter" class="filter-select">
+                    <option value="">All Statuses</option>
+                    <option value="PENDING">Pending</option>
+                    <option value="PROCESSING">Processing</option>
+                    <option value="SUCCESS">Completed</option>
+                    <option value="ERROR">Failed</option>
+                </select>
+                
+                <button id="applyTaskFilter" class="search-button">Apply Filter</button>
+                
+                <label>
+                    <input type="checkbox" id="includeMetadata"> Include Full Metadata
+                </label>
+            </div>
+            
+            <div id="tasksLoader" class="loader"></div>
+            
+            <div id="tasksContainer" class="tasks-list">
+                <p class="empty-message">Loading tasks...</p>
+            </div>
+            
+            <!-- Pagination Controls -->
+            <div class="pagination-controls" style="display: flex; justify-content: center; margin-top: 20px; gap: 10px;">
+                <button id="prevPage" class="view-task-button" style="width: 100px;" disabled>Previous</button>
+                <span id="paginationInfo" style="display: flex; align-items: center;">Page 1 of 1</span>
+                <button id="nextPage" class="view-task-button" style="width: 100px;" disabled>Next</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="search-tab" class="tab-content">
+        <div class="search-section">
+            <h2>Search Files</h2>
+            <div class="search-box">
+                <input type="text" id="searchInput" class="search-input" placeholder="Search for files...">
+                <button id="searchButton" class="search-button">Search</button>
+            </div>
+            
+            <div class="filters">
+                <div class="filter-group">
+                    <h3>File Properties</h3>
+                    <select id="mimeTypeFilter" class="filter-select">
+                        <option value="">All File Types</option>
+                        <option value="image/">Images</option>
+                        <option value="audio/">Audio</option>
+                        <option value="video/">Video</option>
+                        <option value="application/pdf">PDF</option>
+                        <option value="text/">Text</option>
+                    </select>
+                    
+                    <select id="extensionFilter" class="filter-select">
+                        <option value="">All Extensions</option>
+                        <option value=".jpg">.jpg</option>
+                        <option value=".png">.png</option>
+                        <option value=".pdf">.pdf</option>
+                        <option value=".mp3">.mp3</option>
+                        <option value=".mp4">.mp4</option>
+                        <option value=".txt">.txt</option>
+                        <option value=".docx">.docx</option>
+                    </select>
+                    
+                    <select id="sizeFilter" class="filter-select">
+                        <option value="">All Sizes</option>
+                        <option value="tiny">Tiny (< 10KB)</option>
+                        <option value="small">Small (< 1MB)</option>
+                        <option value="medium">Medium (< 10MB)</option>
+                        <option value="large">Large (< 100MB)</option>
+                        <option value="huge">Huge (> 100MB)</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group" id="imageFiltersGroup">
+                    <h3>Image Properties</h3>
+                    <select id="cameraMakeFilter" class="filter-select">
+                        <option value="">All Camera Makes</option>
+                        <option value="Apple">Apple</option>
+                        <option value="Canon">Canon</option>
+                        <option value="Nikon">Nikon</option>
+                        <option value="Sony">Sony</option>
+                        <option value="Samsung">Samsung</option>
+                    </select>
+                    
+                    <select id="colorModeFilter" class="filter-select">
+                        <option value="">All Color Modes</option>
+                        <option value="RGB">RGB</option>
+                        <option value="RGBA">RGBA with Alpha</option>
+                        <option value="L">Grayscale</option>
+                        <option value="CMYK">CMYK</option>
+                    </select>
+                    
+                    <select id="isAnimatedFilter" class="filter-select">
+                        <option value="">Static/Animated</option>
+                        <option value="true">Animated GIFs</option>
+                        <option value="false">Static Images</option>
+                    </select>
+                </div>
+                
+                <div class="filter-group" id="textFiltersGroup">
+                    <h3>Text/Document Properties</h3>
+                    <select id="textEncodingFilter" class="filter-select">
+                        <option value="">All Encodings</option>
+                        <option value="utf-8">UTF-8</option>
+                        <option value="ascii">ASCII</option>
+                        <option value="iso-8859-1">ISO-8859-1</option>
+                    </select>
+                    
+                    <select id="textFormatFilter" class="filter-select">
+                        <option value="">All Formats</option>
+                        <option value="markdown">Markdown</option>
+                        <option value="json">JSON</option>
+                        <option value="xml">XML</option>
+                        <option value="yaml">YAML</option>
+                        <option value="html">HTML</option>
+                    </select>
+                </div>
+                
+                <button id="showAdvancedFilters" class="filter-toggle">Show Advanced Filters</button>
+            </div>
+            
+            <div id="searchLoader" class="loader"></div>
+            
+            <div id="searchResults" class="search-results">
+                <p class="empty-message">Enter a search query above to find files</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching functionality
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Remove active class from all tabs
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                // Add active class to clicked tab and corresponding content
+                this.classList.add('active');
+                const tabName = this.getAttribute('data-tab');
+                document.getElementById(`${tabName}-tab`).classList.add('active');
+            });
+        });
+        
+        // Function to fetch and display system status
+        async function fetchSystemStatus() {
+            const statusContainer = document.getElementById('statusContainer');
+            const timestampContainer = document.getElementById('statusTimestamp');
+            const searchButton = document.getElementById('searchButton');
+            
+            statusContainer.innerHTML = '<p>Checking system status...</p>';
+            
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                let statusHtml = '';
+                let meilisearchAvailable = false;
+                
+                // Display each component status
+                for (const [component, info] of Object.entries(data)) {
+                    // Skip non-component entries
+                    if (['timestamp', 'available_count', 'total_components'].includes(component)) {
+                        continue;
+                    }
+                    
+                    if (component === 'meilisearch' && info.status === 'available') {
+                        meilisearchAvailable = true;
+                    }
+                    
+                    const statusClass = `status-${info.status}`;
+                    statusHtml += `
+                        <div class="status-item">
+                            <div class="status-indicator ${statusClass}"></div>
+                            <div class="status-message">${info.message}</div>
+                        </div>
+                    `;
+                }
+                
+                statusContainer.innerHTML = statusHtml;
+                
+                // Enable/disable search button based on Meilisearch availability
+                if (searchButton) {
+                    searchButton.disabled = !meilisearchAvailable;
+                    if (!meilisearchAvailable) {
+                        document.getElementById('searchResults').innerHTML = 
+                            '<p class="empty-message">Search is unavailable. Meilisearch is not running.</p>';
+                    }
+                }
+                
+                // Format and display timestamp
+                if (data.timestamp) {
+                    const date = new Date(data.timestamp);
+                    timestampContainer.innerHTML = `Last checked: ${date.toLocaleString()}`;
+                }
+                
+                // Update title with availability summary
+                document.title = `File System (${data.available_count}/${data.total_components})`;
+                
+            } catch (error) {
+                statusContainer.innerHTML = `<p>Error checking system status: ${error.message}</p>`;
+            }
+        }
+        
+        // Function to check task status
+        async function checkTaskStatus(taskId, resultContainer) {
+            try {
+                const response = await fetch(`/task/${taskId}`);
+                const taskData = await response.json();
+                
+                // Format task data for display
+                let formattedData = {
+                    task_id: taskData.task_id,
+                    status: taskData.status,
+                    message: taskData.message,
+                    updated_at: taskData.updated_at
+                };
+                
+                // If task has metadata (i.e., is complete), display it
+                if (taskData.metadata) {
+                    formattedData.metadata = taskData.metadata;
+                }
+                
+                // If task has an error, display it
+                if (taskData.error) {
+                    formattedData.error = taskData.error;
+                }
+                
+                // Ensure task_id is displayed properly (it should always be present)
+                // Use the original taskId parameter to avoid variable redeclaration
+                const displayTaskId = taskData.task_id || 'unknown';
+                
+                resultContainer.innerHTML = `
+                    <div class="task-status ${taskData.status.toLowerCase()}">
+                        <h3>Task: ${displayTaskId}</h3>
+                        <p><strong>Status:</strong> ${taskData.status}</p>
+                        <p><strong>Message:</strong> ${taskData.message}</p>
+                        <p><strong>Last Updated:</strong> ${new Date(taskData.updated_at).toLocaleString()}</p>
+                    </div>
+                    
+                    ${taskData.status === 'SUCCESS' ? 
+                        `<div class="result-data">
+                            <h3>Processing Results:</h3>
+                            <pre>${JSON.stringify(taskData.metadata, null, 2)}</pre>
+                        </div>` : 
+                        ''
+                    }
+                    
+                    ${taskData.error ? 
+                        `<div class="error-message">
+                            <h3>Error:</h3>
+                            <p>${taskData.error}</p>
+                        </div>` : 
+                        ''
+                    }
+                `;
+                
+                // If the task is not in a final state, continue checking
+                // Use the original taskId parameter for the recursive call
+                if (['PENDING', 'PROCESSING'].includes(taskData.status)) {
+                    setTimeout(() => checkTaskStatus(taskId, resultContainer), 2000);
+                } else {
+                    // Task is complete, refresh system status
+                    setTimeout(fetchSystemStatus, 1000);
+                }
+                
+            } catch (error) {
+                resultContainer.innerHTML = `Error checking task status: ${error.message}`;
+            }
+        }
+
+        // File upload handler
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('fileInput');
+            const resultContainer = document.getElementById('resultContainer');
+            
+            if (!fileInput.files[0]) {
+                resultContainer.innerHTML = 'Please select a file.';
+                return;
+            }
+            
+            // Create FormData object
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            resultContainer.innerHTML = `
+                <div class="uploading">
+                    <p>Uploading ${fileInput.files[0].name}...</p>
+                    <div class="loader" style="display: block;"></div>
+                </div>
+            `;
+            
+            try {
+                // Send the file to the API
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                // Parse the JSON response
+                const data = await response.json();
+                
+                // Check for duplicate detection response
+                if (response.status === 409 && data.status === 'DUPLICATE') {
+                    // Handle duplicate file detection
+                    resultContainer.innerHTML = `
+                        <div class="task-status error">
+                            <h3>Duplicate File Detected</h3>
+                            <p><strong>File:</strong> ${data.filename}</p>
+                            <p><strong>Message:</strong> ${data.message}</p>
+                        </div>
+                        <div class="task-note">
+                            <p>This file is already in the system. You can:</p>
+                            <ul>
+                                <li>Upload a different file</li>
+                                <li>View the existing file in search</li>
+                                ${data.duplicate_id ? 
+                                `<li><button onclick="viewExistingFile('${data.duplicate_id}')" class="download-button">
+                                    View Original File
+                                </button></li>` : ''}
+                                <li><button onclick="forceUpload()" class="view-task-button">
+                                    Force Upload Anyway
+                                </button></li>
+                            </ul>
+                        </div>
+                    `;
+                    
+                    // Reset the file input to allow another upload
+                    fileInput.value = '';
+                } else {
+                    // Display initial task status for normal processing
+                    resultContainer.innerHTML = `
+                        <div class="task-status pending">
+                            <h3>Task Created!</h3>
+                            <p><strong>Task ID:</strong> ${data.task_id}</p>
+                            <p><strong>Status:</strong> ${data.status}</p>
+                            <p><strong>File:</strong> ${data.filename}</p>
+                            <p><strong>Message:</strong> ${data.message}</p>
+                        </div>
+                        <div class="task-note">
+                            <p>Your file has been uploaded and is being processed in the background.</p>
+                            <p>You can upload another file while this one is processing.</p>
+                        </div>
+                    `;
+                    
+                    // Reset the file input to allow another upload
+                    fileInput.value = '';
+                    
+                    // Start checking the task status
+                    setTimeout(() => checkTaskStatus(data.task_id, resultContainer), 2000);
+                }
+                
+            } catch (error) {
+                resultContainer.innerHTML = `Error: ${error.message}`;
+            }
+        });
+        
+        // Toggle advanced filters
+        document.getElementById('showAdvancedFilters').addEventListener('click', function() {
+            const imageFilters = document.getElementById('imageFiltersGroup');
+            const textFilters = document.getElementById('textFiltersGroup');
+            const button = this;
+            
+            if (imageFilters.style.display === 'none' || imageFilters.style.display === '') {
+                imageFilters.style.display = 'block';
+                textFilters.style.display = 'block';
+                button.textContent = 'Hide Advanced Filters';
+            } else {
+                imageFilters.style.display = 'none';
+                textFilters.style.display = 'none';
+                button.textContent = 'Show Advanced Filters';
+            }
+        });
+        
+        // Search functionality
+        async function performSearch() {
+            const query = document.getElementById('searchInput').value;
+            const resultsContainer = document.getElementById('searchResults');
+            const loader = document.getElementById('searchLoader');
+            
+            // Basic filters
+            const mimeType = document.getElementById('mimeTypeFilter').value;
+            const extension = document.getElementById('extensionFilter').value;
+            const size = document.getElementById('sizeFilter').value;
+            
+            // Image filters
+            const cameraMake = document.getElementById('cameraMakeFilter').value;
+            const colorMode = document.getElementById('colorModeFilter').value;
+            const isAnimated = document.getElementById('isAnimatedFilter').value;
+            
+            // Text filters
+            const textEncoding = document.getElementById('textEncodingFilter').value;
+            const textFormat = document.getElementById('textFormatFilter').value;
+            
+            // Show loading indicator
+            loader.style.display = 'block';
+            resultsContainer.innerHTML = '';
+            
+            // Build query parameters
+            const params = new URLSearchParams();
+            if (query) params.append('q', query);
+            
+            // Add basic filters
+            if (mimeType) params.append('mime_type', mimeType);
+            if (extension) params.append('extension', extension);
+            if (size) params.append('size', size);
+            
+            // Add image-specific filters
+            if (cameraMake) params.append('exif.Make', cameraMake);
+            if (colorMode) params.append('enrichment.color_mode', colorMode);
+            if (isAnimated) params.append('enrichment.animation.is_animated', isAnimated);
+            
+            // Add text-specific filters
+            if (textEncoding) params.append('text_extraction.metadata.encoding', textEncoding);
+            if (textFormat) params.append('text_extraction.metadata.format', textFormat);
+            
+            try {
+                const response = await fetch(`/search?${params.toString()}`);
+                const data = await response.json();
+                
+                // Hide loading indicator
+                loader.style.display = 'none';
+                
+                // Check for errors
+                if (data.error) {
+                    resultsContainer.innerHTML = `<p class="empty-message">Error: ${data.error}</p>`;
+                    return;
+                }
+                
+                // Display results
+                if (data.hits && data.hits.length > 0) {
+                    let resultsHtml = '';
+                    
+                    for (const hit of data.hits) {
+                        // Extract data from hit
+                        const fileInfo = hit.file_info || {};
+                        const filename = fileInfo.filename || 'Unknown file';
+                        const mimeType = fileInfo.mime_type || 'application/octet-stream';
+                        const extension = fileInfo.extension || '';
+                        const size = fileInfo.size_bytes ? formatFileSize(fileInfo.size_bytes) : 'Unknown size';
+                        
+                        // Get summary text
+                        let summary = '';
+                        if (hit.text_extraction && hit.text_extraction.llm_summary) {
+                            summary = hit.text_extraction.llm_summary;
+                        } else if (hit.text_extraction && hit.text_extraction.extracted_text) {
+                            // If no summary but has text, take the first 100 characters
+                            summary = hit.text_extraction.extracted_text.substring(0, 150) + '...';
+                        }
+                        
+                        // Convert MIME type to readable format
+                        const readableType = getReadableType(mimeType);
+                        
+                        // Format upload date
+                        const uploadDate = hit.upload_date ? new Date(hit.upload_date).toLocaleString() : 'Unknown date';
+                        
+                        // Extract additional metadata for display
+                        const exifData = hit.exif || {};
+                        const enrichmentData = hit.enrichment || {};
+                        
+                        // Format for image dimensions
+                        let dimensions = '';
+                        if (enrichmentData.width && enrichmentData.height) {
+                            dimensions = `${enrichmentData.width}×${enrichmentData.height}`;
+                        }
+                        
+                        // Camera info
+                        let cameraInfo = '';
+                        if (exifData.Make || exifData.Model) {
+                            cameraInfo = [exifData.Make, exifData.Model].filter(Boolean).join(' ');
+                        }
+                        
+                        // Prepare image description if available
+                        const imageDescription = enrichmentData.llm_description || '';
+                        
+                        // Build result HTML
+                        resultsHtml += `
+                            <div class="result-item">
+                                <div class="result-header">
+                                    <h3 class="result-title">${filename}</h3>
+                                    <span class="result-type">${readableType}</span>
+                                </div>
+                                
+                                <div class="result-actions">
+                                    <button onclick="downloadFile('${hit.id}')" class="download-button">
+                                        <span class="download-icon">⬇️</span> Download
+                                    </button>
+                                </div>
+                                
+                                ${summary ? `<div class="result-summary">${summary}</div>` : ''}
+                                ${imageDescription ? `<div class="result-summary"><strong>Image content:</strong> ${imageDescription}</div>` : ''}
+                                
+                                <div class="result-metadata">
+                                    <div class="metadata-group">
+                                        <span class="metadata-item"><strong>Size:</strong> ${size}</span>
+                                        <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
+                                        <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
+                                    </div>
+                                    
+                                    ${dimensions ? `
+                                    <div class="metadata-group">
+                                        <span class="metadata-item"><strong>Dimensions:</strong> ${dimensions}</span>
+                                        ${cameraInfo ? `<span class="metadata-item"><strong>Camera:</strong> ${cameraInfo}</span>` : ''}
+                                    </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    resultsContainer.innerHTML = resultsHtml;
+                } else {
+                    resultsContainer.innerHTML = `<p class="empty-message">No results found for "${query}"</p>`;
+                }
+            } catch (error) {
+                loader.style.display = 'none';
+                resultsContainer.innerHTML = `<p class="empty-message">Error: ${error.message}</p>`;
+            }
+        }
+        
+        // Format file size in a readable way
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' bytes';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+        }
+        
+        // Convert MIME type to readable format
+        function getReadableType(mimeType) {
+            if (!mimeType) return 'Unknown';
+            
+            if (mimeType.startsWith('image/')) return 'Image';
+            if (mimeType.startsWith('audio/')) return 'Audio';
+            if (mimeType.startsWith('video/')) return 'Video';
+            if (mimeType.startsWith('text/')) return 'Text';
+            
+            // Handle specific types
+            if (mimeType === 'application/pdf') return 'PDF';
+            if (mimeType.includes('word')) return 'Word Document';
+            if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return 'Spreadsheet';
+            if (mimeType.includes('presentation')) return 'Presentation';
+            
+            return mimeType.split('/')[1] || mimeType;
+        }
+        
+        // Function to download a file
+        function downloadFile(docId) {
+            if (!docId) {
+                alert('Document ID not found');
+                return;
+            }
+            
+            // Create a temporary link element
+            const link = document.createElement('a');
+            link.href = `/download/${docId}`;
+            link.target = '_blank';
+            link.download = ''; // Let the server decide the filename
+            
+            // Append to body, trigger click, and remove
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // Search input listeners
+        document.getElementById('searchButton').addEventListener('click', performSearch);
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+        
+        // Basic filter change listeners
+        document.getElementById('mimeTypeFilter').addEventListener('change', performSearch);
+        document.getElementById('extensionFilter').addEventListener('change', performSearch);
+        document.getElementById('sizeFilter').addEventListener('change', performSearch);
+        
+        // Advanced filter change listeners
+        document.getElementById('cameraMakeFilter').addEventListener('change', performSearch);
+        document.getElementById('colorModeFilter').addEventListener('change', performSearch);
+        document.getElementById('isAnimatedFilter').addEventListener('change', performSearch);
+        document.getElementById('textEncodingFilter').addEventListener('change', performSearch);
+        document.getElementById('textFormatFilter').addEventListener('change', performSearch);
+        
+        // Global state for task pagination
+        const taskPageState = {
+            currentPage: 1,
+            totalPages: 1,
+            statusFilter: '',
+            includeMetadata: false,
+            limit: 10
+        };
+        
+        // Function to load tasks list with pagination
+        async function loadTasks(statusFilter = '', refresh = false, page = 1, includeMetadata = false) {
+            const tasksContainer = document.getElementById('tasksContainer');
+            const loader = document.getElementById('tasksLoader');
+            const prevPageBtn = document.getElementById('prevPage');
+            const nextPageBtn = document.getElementById('nextPage');
+            const paginationInfo = document.getElementById('paginationInfo');
+            
+            // Update state
+            taskPageState.statusFilter = statusFilter;
+            taskPageState.currentPage = page;
+            taskPageState.includeMetadata = includeMetadata;
+            
+            // Show loading indicator
+            loader.style.display = 'block';
+            tasksContainer.innerHTML = '';
+            
+            try {
+                // Build URL with query parameters
+                const params = new URLSearchParams();
+                
+                if (statusFilter) {
+                    params.append('status', statusFilter);
+                }
+                
+                if (refresh) {
+                    params.append('refresh', 'true');
+                }
+                
+                params.append('page', page.toString());
+                params.append('limit', taskPageState.limit.toString());
+                
+                if (includeMetadata) {
+                    params.append('include_metadata', 'true');
+                }
+                
+                const url = `/tasks?${params.toString()}`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                // Hide loading indicator
+                loader.style.display = 'none';
+                
+                // Update pagination state
+                if (data.pagination) {
+                    taskPageState.currentPage = data.pagination.page;
+                    taskPageState.totalPages = data.pagination.pages;
+                    
+                    // Update pagination controls
+                    paginationInfo.textContent = `Page ${data.pagination.page} of ${data.pagination.pages}`;
+                    prevPageBtn.disabled = !data.pagination.has_prev;
+                    nextPageBtn.disabled = !data.pagination.has_next;
+                } else {
+                    // Default if pagination info is missing
+                    paginationInfo.textContent = `Page ${page} of 1`;
+                    prevPageBtn.disabled = true;
+                    nextPageBtn.disabled = true;
+                }
+                
+                // Display tasks
+                if (data.tasks && data.tasks.length > 0) {
+                    let tasksHtml = '';
+                    
+                    for (const task of data.tasks) {
+                        const statusClass = task.status.toLowerCase();
+                        const updatedAt = new Date(task.updated_at).toLocaleString();
+                        
+                        // Get filename from different possible locations
+                        let fileInfo = 'Unknown file';
+                        if (task.filename) {
+                            fileInfo = task.filename;
+                        } else if (task.metadata && task.metadata.file_info && task.metadata.file_info.filename) {
+                            fileInfo = task.metadata.file_info.filename;
+                        }
+                        
+                        // Create task card
+                        tasksHtml += `
+                            <div class="task-card ${statusClass}">
+                                <div class="task-header">
+                                    <span class="task-status-indicator ${statusClass}"></span>
+                                    <h3>${fileInfo}</h3>
+                                    <span class="task-status-label">${task.status}</span>
+                                </div>
+                                
+                                <div class="task-details">
+                                    <p><strong>Task ID:</strong> ${task.task_id || 'unknown'}</p>
+                                    <p><strong>Message:</strong> ${task.message}</p>
+                                    <p><strong>Updated:</strong> ${updatedAt}</p>
+                                    ${task.created_at ? `<p><strong>Created:</strong> ${new Date(task.created_at).toLocaleString()}</p>` : ''}
+                                </div>
+                                
+                                <div class="task-actions">
+                                    <button onclick="viewTaskDetails('${task.task_id || ''}')" class="view-task-button">View Details</button>
+                                    
+                                    ${task.status === 'SUCCESS' && task.metadata && task.metadata.search_id ? 
+                                        `<button onclick="downloadFile('${task.metadata.search_id}')" class="download-button">
+                                            <span class="download-icon">⬇️</span> Download
+                                        </button>` : ''
+                                    }
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    tasksContainer.innerHTML = tasksHtml;
+                } else {
+                    tasksContainer.innerHTML = `<p class="empty-message">No tasks found${statusFilter ? ` with status ${statusFilter}` : ''}</p>`;
+                }
+            } catch (error) {
+                loader.style.display = 'none';
+                tasksContainer.innerHTML = `<p class="empty-message">Error: ${error.message}</p>`;
+                
+                // Reset pagination controls on error
+                paginationInfo.textContent = `Page 1 of 1`;
+                prevPageBtn.disabled = true;
+                nextPageBtn.disabled = true;
+            }
+        }
+        
+        // Function to view task details
+        function viewTaskDetails(taskId) {
+            // Go to the upload tab
+            document.querySelector('.tab[data-tab="upload"]').click();
+            
+            // Show task details
+            const resultContainer = document.getElementById('resultContainer');
+            resultContainer.innerHTML = `
+                <div class="task-status">
+                    <h3>Loading task details...</h3>
+                    <div class="loader" style="display: block;"></div>
+                </div>
+            `;
+            
+            // Check task status to display details
+            checkTaskStatus(taskId, resultContainer);
+        }
+        
+        // Apply task filter handler
+        document.getElementById('applyTaskFilter').addEventListener('click', function() {
+            const statusFilter = document.getElementById('taskStatusFilter').value;
+            const includeMetadata = document.getElementById('includeMetadata').checked;
+            
+            // Reset to page 1 when applying a new filter
+            taskPageState.currentPage = 1;
+            loadTasks(statusFilter, false, 1, includeMetadata);
+        });
+        
+        // Refresh tasks button handler
+        document.getElementById('refreshTasks').addEventListener('click', function() {
+            const statusFilter = document.getElementById('taskStatusFilter').value;
+            const includeMetadata = document.getElementById('includeMetadata').checked;
+            loadTasks(statusFilter, true, taskPageState.currentPage, includeMetadata);
+        });
+        
+        // Previous page button handler
+        document.getElementById('prevPage').addEventListener('click', function() {
+            if (taskPageState.currentPage > 1) {
+                const statusFilter = document.getElementById('taskStatusFilter').value;
+                const includeMetadata = document.getElementById('includeMetadata').checked;
+                loadTasks(statusFilter, false, taskPageState.currentPage - 1, includeMetadata);
+            }
+        });
+        
+        // Next page button handler
+        document.getElementById('nextPage').addEventListener('click', function() {
+            if (taskPageState.currentPage < taskPageState.totalPages) {
+                const statusFilter = document.getElementById('taskStatusFilter').value;
+                const includeMetadata = document.getElementById('includeMetadata').checked;
+                loadTasks(statusFilter, false, taskPageState.currentPage + 1, includeMetadata);
+            }
+        });
+        
+        // Include metadata checkbox handler
+        document.getElementById('includeMetadata').addEventListener('change', function() {
+            const statusFilter = document.getElementById('taskStatusFilter').value;
+            const includeMetadata = this.checked;
+            loadTasks(statusFilter, false, taskPageState.currentPage, includeMetadata);
+        });
+        
+        // Refresh status button handler
+        document.getElementById('refreshStatus').addEventListener('click', fetchSystemStatus);
+        
+        // Function to view an existing file in the system
+        function viewExistingFile(docId) {
+            if (!docId) {
+                alert('Document ID not found');
+                return;
+            }
+            
+            // Switch to search tab
+            document.querySelector('.tab[data-tab="search"]').click();
+            
+            // Clear the search input to show all files
+            document.getElementById('searchInput').value = '';
+            
+            // We'll use an empty search with a filter on the document ID
+            const params = new URLSearchParams();
+            params.append('filter_id', docId);
+            
+            // Show loading indicator
+            const resultsContainer = document.getElementById('searchResults');
+            const loader = document.getElementById('searchLoader');
+            
+            loader.style.display = 'block';
+            resultsContainer.innerHTML = '';
+            
+            // Fetch the specific document
+            fetch(`/search?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => {
+                    loader.style.display = 'none';
+                    
+                    if (data.hits && data.hits.length > 0) {
+                        // Found the document - highlight it
+                        const hit = data.hits[0];
+                        
+                        // Display the same way we do for search results
+                        const fileInfo = hit.file_info || {};
+                        const filename = fileInfo.filename || 'Unknown file';
+                        const mimeType = fileInfo.mime_type || 'application/octet-stream';
+                        const extension = fileInfo.extension || '';
+                        const size = fileInfo.size_bytes ? formatFileSize(fileInfo.size_bytes) : 'Unknown size';
+                        
+                        // Get summary text
+                        let summary = '';
+                        if (hit.text_extraction && hit.text_extraction.llm_summary) {
+                            summary = hit.text_extraction.llm_summary;
+                        } else if (hit.text_extraction && hit.text_extraction.extracted_text) {
+                            summary = hit.text_extraction.extracted_text.substring(0, 150) + '...';
+                        }
+                        
+                        const readableType = getReadableType(mimeType);
+                        const uploadDate = hit.upload_date ? new Date(hit.upload_date).toLocaleString() : 'Unknown date';
+                        
+                        // Format result HTML with a special highlight class
+                        resultsContainer.innerHTML = `
+                            <div class="result-item" style="border: 2px solid #4CAF50; background-color: #f8fff8;">
+                                <div class="result-header">
+                                    <h3 class="result-title">${filename}</h3>
+                                    <span class="result-type">${readableType}</span>
+                                </div>
+                                
+                                <div class="result-actions">
+                                    <button onclick="downloadFile('${hit.id}')" class="download-button">
+                                        <span class="download-icon">⬇️</span> Download
+                                    </button>
+                                </div>
+                                
+                                ${summary ? `<div class="result-summary">${summary}</div>` : ''}
+                                
+                                <div class="result-metadata">
+                                    <div class="metadata-group">
+                                        <span class="metadata-item"><strong>Size:</strong> ${size}</span>
+                                        <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
+                                        <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
+                                    </div>
+                                </div>
+                                
+                                <p style="margin-top: 15px; color: #4CAF50;"><strong>This is the duplicate file already in the system.</strong></p>
+                            </div>
+                        `;
+                    } else {
+                        resultsContainer.innerHTML = `<p class="empty-message">Could not find the original file in the system.</p>`;
+                    }
+                })
+                .catch(error => {
+                    loader.style.display = 'none';
+                    resultsContainer.innerHTML = `<p class="empty-message">Error: ${error.message}</p>`;
+                });
+        }
+        
+        // Function to force upload a file despite it being a duplicate
+        function forceUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const resultContainer = document.getElementById('resultContainer');
+            
+            if (!fileInput.files[0]) {
+                resultContainer.innerHTML = '<p>Please select a file.</p>';
+                return;
+            }
+            
+            // Create FormData object
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            resultContainer.innerHTML = `
+                <div class="uploading">
+                    <p>Force uploading ${fileInput.files[0].name} (ignoring duplicate detection)...</p>
+                    <div class="loader" style="display: block;"></div>
+                </div>
+            `;
+            
+            // Send the file to the API with allow_duplicates=true parameter
+            fetch('/upload?allow_duplicates=true', {
+                method: 'POST',
+                body: formData,
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Display initial task status
+                resultContainer.innerHTML = `
+                    <div class="task-status pending">
+                        <h3>Task Created!</h3>
+                        <p><strong>Task ID:</strong> ${data.task_id}</p>
+                        <p><strong>Status:</strong> ${data.status}</p>
+                        <p><strong>File:</strong> ${data.filename}</p>
+                        <p><strong>Message:</strong> ${data.message}</p>
+                    </div>
+                    <div class="task-note">
+                        <p>Your file has been uploaded despite being a duplicate and is being processed in the background.</p>
+                        <p>You can upload another file while this one is processing.</p>
+                    </div>
+                `;
+                
+                // Reset the file input to allow another upload
+                fileInput.value = '';
+                
+                // Start checking the task status
+                setTimeout(() => checkTaskStatus(data.task_id, resultContainer), 2000);
+            })
+            .catch(error => {
+                resultContainer.innerHTML = `Error: ${error.message}`;
+            });
+        }
+
+        // Fetch status and tasks when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchSystemStatus();
+            // Initially load tasks with refresh=true to get all tasks from Celery
+            loadTasks('', true, 1, false);
+        });
+    </script>
+</body>
+</html>
