@@ -50,5 +50,4 @@ logs/
 .AppleDouble
 .LSOverride
 
-# Claude documentation file
-CLAUDE.md
+# Removed: Now tracking CLAUDE.md
