@@ -9,7 +9,7 @@ services:
       - shared_tmp:/tmp
     environment:
       - MEILISEARCH_HOST=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=masterKey
+      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-masterKey}
       - MEILISEARCH_INDEX=files
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_HOST=http://host.docker.internal:11434
@@ -30,7 +30,7 @@ services:
       - shared_tmp:/tmp
     environment:
       - MEILISEARCH_HOST=http://meilisearch:7700
-      - MEILISEARCH_API_KEY=masterKey
+      - MEILISEARCH_API_KEY=${MEILI_MASTER_KEY:-masterKey}
       - MEILISEARCH_INDEX=files
       - REDIS_URL=redis://redis:6379/0
       - OLLAMA_HOST=http://host.docker.internal:11434
@@ -58,7 +58,7 @@ services:
       - ./meili_data:/meili_data
     environment:
       - MEILI_NO_ANALYTICS=true
-      - MEILI_MASTER_KEY=masterKey
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-masterKey}
 
 volumes:
   redis_data:

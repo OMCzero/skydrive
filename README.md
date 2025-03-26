@@ -51,14 +51,21 @@ The easiest way to run the application is with Docker Compose:
    ollama pull llama3.2-vision
    ```
 
-3. Run the application:
+3. Generate the MeiliSearch API key:
+   ```bash
+   cp .env.example .env
+   # Edit the .env file to set a secure random key
+   # You can generate one with: openssl rand -hex 16
+   ```
+
+4. Run the application:
    ```bash
    docker-compose up -d
    ```
 
-4. Access the application at http://localhost:8000
+5. Access the application at http://localhost:8000
 
-5. To stop the application:
+6. To stop the application:
    ```bash
    docker-compose down
    ```
