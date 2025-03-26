@@ -21,20 +21,37 @@ def check_tlsh():
 def check_magika():
     """Check if Magika advanced file type detection is available"""
     try:
-        from magika import Magika
+        from magika import Magika, ContentTypeLabel
         import pathlib
         
         try:
             # Initialize Magika with default model
             magika = Magika()
+            print("Magika object created successfully")
+            
             # Test that Magika works by analyzing a simple string
+            print("Testing Magika with simple string...")
             test_result = magika.identify_bytes(b"test")
+            print(f"Got result type: {type(test_result)}, dir: {dir(test_result)}")
+            
+            # Check if the operation was successful
+            if hasattr(test_result, 'ok'):
+                print(f"Result has 'ok' attribute, type: {type(test_result.ok)}, value: {test_result.ok}")
+                if not test_result.ok:  # Changed from ok() to ok - it's a property, not a method
+                    return {"status": "error", "message": f"Magika test failed: {test_result.status}"}
+            else:
+                return {"status": "error", "message": f"Magika result missing 'ok' attribute: {dir(test_result)}"}
+                
             # Access properties to verify correct API
+            print("Checking result properties...")
             _ = test_result.output.mime_type
-            _ = test_result.output.ct_label  
-            _ = test_result.output.score     
+            _ = test_result.output.label  # In v0.6.1, ct_label is renamed to label
+            _ = test_result.score         # In v0.6.1, score is at top level, not in output
             return {"status": "available", "message": "Magika initialized successfully"}
         except Exception as init_error:
+            print(f"Detailed Magika init error: {str(init_error)}")
+            import traceback
+            traceback.print_exc()
             return {"status": "error", "message": f"Magika initialization failed: {str(init_error)}"}
     except ImportError:
         return {"status": "unavailable", "message": "Magika not available - advanced file type detection disabled"}

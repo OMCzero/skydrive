@@ -28,7 +28,7 @@ except (ImportError, RuntimeError, Exception) as e:
 
 # Import Magika for advanced file type detection
 try:
-    from magika import Magika
+    from magika import Magika, ContentTypeLabel
     import pathlib
     MAGIKA_AVAILABLE = True
     try:
@@ -37,10 +37,14 @@ try:
         # Test that Magika works by analyzing a simple string
         test_result = magika.identify_bytes(b"test")
         # Access properties to verify correct API
-        _ = test_result.output.mime_type
-        _ = test_result.output.ct_label  # Correct field name is ct_label, not label
-        _ = test_result.output.score     # Score is part of output, not at top level
-        print("Magika initialized successfully")
+        if test_result.ok:
+            _ = test_result.output.mime_type
+            _ = test_result.output.label  # In v0.6.1, ct_label is renamed to label
+            _ = test_result.score         # In v0.6.1, score is at top level, not in output
+            print("Magika initialized successfully")
+        else:
+            print(f"Magika test failed: {test_result.status}")
+            MAGIKA_AVAILABLE = False
     except Exception as init_error:
         print(f"Magika initialization failed: {str(init_error)}")
         MAGIKA_AVAILABLE = False
@@ -207,7 +211,10 @@ def get_basic_file_info(file_path: str, original_filename: Optional[str] = None)
                 result = magika.identify_path(path_obj)
                 
                 # Validate that we got a proper result
-                if not hasattr(result, "output") or not hasattr(result.output, "ct_label"):
+                if not result.ok:
+                    raise AttributeError(f"Magika analysis failed: {result.status}")
+                
+                if not hasattr(result, "output") or not hasattr(result.output, "label"):
                     raise AttributeError("Invalid result structure")
                     
             except Exception as path_error:
@@ -219,19 +226,25 @@ def get_basic_file_info(file_path: str, original_filename: Optional[str] = None)
                         result = magika.identify_bytes(content)
                         
                         # Validate that we got a proper result
-                        if not hasattr(result, "output") or not hasattr(result.output, "ct_label"):
+                        if not result.ok:
+                            raise AttributeError(f"Magika analysis failed: {result.status}")
+                            
+                        if not hasattr(result, "output") or not hasattr(result.output, "label"):
                             raise AttributeError("Invalid result structure")
                 except Exception as bytes_error:
                     raise Exception(f"Both path and bytes analysis failed: {str(path_error)}, {str(bytes_error)}")
             
-            # Add Magika results - using the correct output structure
+            # Add Magika results - using the updated structure for v0.6.1
             file_info["magika"] = {
                 "mime_type": result.output.mime_type,
-                "label": str(result.output.ct_label),
-                "confidence": float(result.output.score),
+                "label": str(result.output.label),
+                "confidence": float(result.score),  # score is now at top level
                 "group": result.output.group or None,
-                "magic": result.output.magic or None,
+                # 'magic' field has been removed in v0.6.1
                 "description": result.output.description or None,
+                # Add new fields available in v0.6.1
+                "is_text": result.output.is_text if hasattr(result.output, "is_text") else None,
+                "extensions": result.output.extensions if hasattr(result.output, "extensions") else None
             }
             
             # If standard MIME type detection failed, use Magika's result
