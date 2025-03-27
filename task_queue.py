@@ -114,6 +114,11 @@ def process_file(self, temp_file_path: str, original_filename: str) -> Dict[str,
             metadata["file_info"] = {}
         metadata["file_info"]["stored_path"] = stored_path
         metadata["file_info"]["unique_id"] = unique_id
+
+        # Save metadata to a JSON file
+        metadata_file_path = os.path.join(UPLOADS_DIR, f"{unique_id}.json")
+        with open(metadata_file_path, "w") as f:
+            json.dump(metadata, f)
         
         # Add to search index if available
         search_id = None
