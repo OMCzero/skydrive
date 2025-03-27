@@ -122,6 +122,9 @@ def generate_image_description(file_path: str) -> Dict[str, Any]:
         
         # Set a seed for more consistent generations
         generation_seed = 42
+        temperature = 0.3
+        top_p = 0.9
+        num_predict = 100
         
         # Prepare the prompt for image description
         prompt = """
@@ -140,9 +143,9 @@ def generate_image_description(file_path: str) -> Dict[str, Any]:
             images=[base64_image],
             options={
                 "seed": generation_seed,
-                "temperature": 0.3,
-                "top_p": 0.9,
-                "num_predict": 100
+                "temperature": temperature,
+                "top_p": top_p,
+                "num_predict": num_predict
             }
         )
         
@@ -167,8 +170,8 @@ def generate_image_description(file_path: str) -> Dict[str, Any]:
                 "generated_tokens": getattr(response, 'eval_count', 0) if hasattr(response, 'eval_count') else response.get("eval_count", 0),
                 "generation_settings": {
                     "seed": generation_seed,
-                    "temperature": 0.3,
-                    "top_p": 0.9
+                    "temperature": temperature,
+                    "top_p": top_p
                 }
             }
         }
@@ -222,7 +225,7 @@ def enrich_image(file_path: str) -> Dict[str, Any]:
                 # Reset the frame position to avoid issues
                 img.seek(0)
             except Exception as e:
-                info["animation_error"] = str(e)
+                info["animation"] = {"error": str(e)}
         
         # Image statistics if available (for non-animated images or first frame)
         try:
@@ -237,11 +240,10 @@ def enrich_image(file_path: str) -> Dict[str, Any]:
                 "mean": stats.mean,
                 "median": stats.median,
                 "stddev": stats.stddev,
-                "extrema": stats.extrema,
-                "histogram": [h[:5] for h in stats.histogram],  # Just the beginning for brevity
+                "extrema": stats.extrema
             }
         except Exception as e:
-            info["statistics_error"] = str(e)
+            info["statistics"] = {"error": str(e)}
             
         # Get the color palette if it's a palettized image
         if img.mode == 'P':
@@ -264,7 +266,7 @@ def enrich_image(file_path: str) -> Dict[str, Any]:
                 info["llm_description"] = description_result["description"]
                 info["llm_metadata"] = description_result.get("metadata", {})
             else:
-                info["llm_description_error"] = description_result.get("error", "Unknown error")
+                info["llm_description"] = description_result.get("error", "Unknown error")
         
         # Clean up
         img.close()
