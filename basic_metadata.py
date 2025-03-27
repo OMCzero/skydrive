@@ -105,8 +105,7 @@ def calculate_file_hashes(file_path: str) -> Dict[str, str]:
                     # File is too small for TLSH
                     result["tlsh"] = None
         except Exception as e:
-            print(f"Error generating TLSH hash: {str(e)}")
-            result["tlsh"] = None
+            result["tlsh"] = {"error": str(e)}
     
     return result
 
@@ -169,7 +168,7 @@ def extract_exif_data(file_path: str) -> Optional[Dict[str, Any]]:
         return None
     except (subprocess.SubprocessError, json.JSONDecodeError, FileNotFoundError):
         # exiftool not available or other error
-        return None
+        return {"error": "exiftool not available"}
 
 def get_basic_file_info(file_path: str, original_filename: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -298,8 +297,7 @@ def extract_basic_metadata(file_path: str, original_filename: Optional[str] = No
                     # Add the enrichment data under its own key
                     metadata["enrichment"] = enrichment_data
             except Exception as e:
-                # Log the error but continue processing
-                print(f"Error in enrichment: {str(e)}")
+                metadata["enrichment"] = {"error": str(e)}
         
         # Apply text extraction if supported for this file type
         if supports_text_extraction(mime_type, file_path):
@@ -316,9 +314,6 @@ def extract_basic_metadata(file_path: str, original_filename: Optional[str] = No
                     # (this helps debug what's happening)
                     metadata["text_extraction"] = text_data
                 except Exception as e:
-                    # Log the error but continue processing
-                    error_msg = f"Error in text extraction: {str(e)}"
-                    print(error_msg)
-                    metadata["text_extraction"] = {"error": error_msg}
+                    metadata["text_extraction"] = {"error": str(e)}
     
     return metadata

@@ -102,8 +102,7 @@ try:
         ollama_client = Client(host=OLLAMA_HOST, timeout=3600.0)  # Increased timeout to 1 hour
         print(f"Created Ollama client for host: {OLLAMA_HOST}")
     except Exception as client_error:
-        print(f"Error creating Ollama client: {str(client_error)}")
-        ollama_client = None
+        ollama_client = {"error": str(client_error)}
     
     # Test if Ollama is available
     if ollama_client is None:
