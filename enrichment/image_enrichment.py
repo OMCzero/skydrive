@@ -237,8 +237,7 @@ def enrich_image(file_path: str) -> Dict[str, Any]:
                 "mean": stats.mean,
                 "median": stats.median,
                 "stddev": stats.stddev,
-                "extrema": stats.extrema,
-                "histogram": [h[:5] for h in stats.histogram],  # Just the beginning for brevity
+                "extrema": stats.extrema
             }
         except Exception as e:
             info["statistics_error"] = str(e)
