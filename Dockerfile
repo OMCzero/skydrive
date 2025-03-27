@@ -17,6 +17,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt 
 RUN pip install --no-cache-dir ollama
 
+# Pre-download Whisper model
+RUN python -c "import whisper; whisper.load_model('turbo')"
+
 # Copy application code
 COPY . .
 
