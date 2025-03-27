@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 from datetime import datetime
 import mimetypes
+import c2pa
 
 # For perceptual hashing (primarily for images)
 try:
@@ -250,10 +251,20 @@ def get_basic_file_info(file_path: str, original_filename: Optional[str] = None)
             # If standard MIME type detection failed, use Magika's result
             if not mime_type and result.output.mime_type:
                 file_info["mime_type"] = result.output.mime_type
-                
+
         except Exception as e:
             print(f"Magika analysis error: {str(e)}")
             file_info["magika"] = {"error": str(e)}
+    try:
+        reader = c2pa.Reader.from_file(file_path)
+        # Parse the JSON string into a Python object
+        file_info["c2pa"] = {"manifest": json.loads(reader.json())}
+    except c2pa.Error.ManifestNotFound as e:
+        file_info["c2pa"] = "No manifest found"
+    except Exception as e:
+        file_info["c2pa"] = {"error": str(e)}
+                
+
     
     return file_info
 
