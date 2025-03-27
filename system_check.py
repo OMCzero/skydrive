@@ -108,44 +108,27 @@ def check_ollama():
                 # Get client and make a test request
                 if ollama_client:
                     model_list = ollama_client.list()
-                    
-                    # Try multiple approaches to extract model names, similar to text_extraction.py
                     model_names = []
                     
-                    # Approach 1: Check if it's a dict with 'models' key containing a list of dicts with 'name' key
-                    if isinstance(model_list, dict) and 'models' in model_list:
-                        try:
-                            model_names = [model['name'] for model in model_list['models'] 
-                                          if isinstance(model, dict) and 'name' in model]
-                        except (TypeError, KeyError):
-                            pass
+                    # Extract model names from ListResponse
+                    if hasattr(model_list, "models"):
+                        for model_obj in model_list.models:
+                            if hasattr(model_obj, "model"):
+                                model_names.append(model_obj.model)
                     
-                    # Approach 2: Check if it's an object with 'models' attribute that's iterable
-                    if not model_names and hasattr(model_list, 'models'):
-                        try:
-                            if hasattr(model_list.models, '__iter__'):
-                                for model in model_list.models:
-                                    if hasattr(model, 'name'):
-                                        model_names.append(model.name)
-                                    elif isinstance(model, dict) and 'name' in model:
-                                        model_names.append(model['name'])
-                        except (TypeError, AttributeError):
-                            pass
-                    
-                    # Approach 3: Check if it's just a list or if it's directly iterable
-                    if not model_names:
-                        try:
-                            if hasattr(model_list, '__iter__') and not isinstance(model_list, (str, bytes)):
-                                for model in model_list:
-                                    if hasattr(model, 'name'):
-                                        model_names.append(model.name)
-                                    elif isinstance(model, dict) and 'name' in model:
-                                        model_names.append(model['name'])
-                        except (TypeError, AttributeError):
-                            pass
-                    
-                    # Now check if our model is in the list
+                    # Check if our model is in the list (with version tolerance)
+                    model_match = False
                     if ollama_model in model_names:
+                        model_match = True
+                    else:
+                        # Handle ":latest" tags with partial matching
+                        for name in model_names:
+                            base_name = name.split(':', 1)[0]  # Get part before colon
+                            if ollama_model == base_name or f"{ollama_model}:" in name:
+                                model_match = True
+                                break
+                    
+                    if model_match:
                         return {
                             "status": "available", 
                             "message": f"Ollama is available with model: {ollama_model}"
