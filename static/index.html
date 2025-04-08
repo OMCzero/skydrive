@@ -195,6 +195,7 @@
             display: flex;
             flex-wrap: wrap;
             gap: 10px;
+            align-items: center; /* Align items vertically */
         }
         .metadata-item {
             display: inline-block;
@@ -418,6 +419,82 @@
         .view-task-button:hover {
             background-color: #455A64;
         }
+        
+        /* Enhanced Tag Input Styles */
+        .tag-input-container {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            cursor: text;
+            position: relative; /* Needed for suggestions dropdown */
+        }
+        .tag-input-container:focus-within {
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+        }
+        .tag-pill {
+            background-color: #e0e0e0;
+            color: #333;
+            border-radius: 12px;
+            padding: 3px 10px;
+            margin: 2px;
+            display: inline-flex;
+            align-items: center;
+            font-size: 13px;
+        }
+        .tag-pill span {
+            margin-right: 5px;
+        }
+        .tag-pill button {
+            background: none;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 0;
+            margin-left: 5px;
+            line-height: 1;
+        }
+        .tag-pill button:hover {
+            color: #000;
+        }
+        .tag-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            padding: 5px;
+            min-width: 100px; /* Ensure some space for typing */
+        }
+        .tag-suggestions {
+            position: absolute;
+            top: 100%; /* Position below the input container */
+            left: 0;
+            width: 100%; /* Match parent width */
+            background-color: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-height: 150px;
+            overflow-y: auto;
+            z-index: 10; /* Ensure suggestions are on top */
+            display: none; /* Hidden by default */
+        }
+        .tag-suggestions ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .tag-suggestions li {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+        .tag-suggestions li:hover {
+            background-color: #f5f5f5;
+        }
     </style>
 </head>
 <body>
@@ -442,6 +519,15 @@
             <h2>Upload File</h2>
             <form id="uploadForm">
                 <input type="file" id="fileInput" required>
+                <div style="margin: 10px 0;">
+                    <label for="tagInput">Tags (Press Enter to add):</label><br>
+                    <div class="tag-input-container" id="tagInputContainer">
+                        <span id="tagPills"></span>
+                        <input type="text" id="tagInput" class="tag-input" placeholder="Add a tag...">
+                        <div class="tag-suggestions" id="tagSuggestions"></div>
+                    </div>
+                    <input type="hidden" id="tagsHiddenInput" name="tags"> <!-- Hidden input for form submission -->
+                </div>
                 <button type="submit">Upload and Process</button>
             </form>
         </div>
@@ -726,21 +812,159 @@
             }
         }
 
-        // File upload handler
+        // Enhanced Tag Input Logic
+        const tagInputContainer = document.getElementById('tagInputContainer');
+        const tagInput = document.getElementById('tagInput');
+        const tagPills = document.getElementById('tagPills');
+        const tagSuggestions = document.getElementById('tagSuggestions');
+        const tagsHiddenInput = document.getElementById('tagsHiddenInput');
+        let currentTags = [];
+        let suggestionFetchTimeout;
+
+        // Function to render tags as pills
+        function renderTags() {
+            tagPills.innerHTML = ''; // Clear existing pills
+            currentTags.forEach((tag, index) => {
+                const pill = document.createElement('span');
+                pill.classList.add('tag-pill');
+                pill.innerHTML = `
+                    <span>${tag}</span>
+                    <button type="button" data-index="${index}">&times;</button>
+                `;
+                tagPills.appendChild(pill);
+            });
+            // Update hidden input for form submission
+            tagsHiddenInput.value = JSON.stringify(currentTags);
+        }
+
+        // Function to add a tag
+        function addTag(tag) {
+            tag = tag.trim();
+            if (tag && !currentTags.includes(tag)) {
+                currentTags.push(tag);
+                renderTags();
+            }
+            tagInput.value = ''; // Clear input
+            tagSuggestions.style.display = 'none'; // Hide suggestions
+        }
+
+        // Function to remove a tag
+        function removeTag(index) {
+            currentTags.splice(index, 1);
+            renderTags();
+        }
+
+        // Fetch and display suggestions
+        async function fetchSuggestions(query) {
+            if (!query || query.length < 1) { // Adjust min length if needed
+                tagSuggestions.style.display = 'none';
+                return;
+            }
+            try {
+                const response = await fetch(`/tags/suggest?q=${encodeURIComponent(query)}`);
+                const data = await response.json();
+                tagSuggestions.innerHTML = ''; // Clear previous suggestions
+                
+                if (data.suggestions && data.suggestions.length > 0) {
+                    const ul = document.createElement('ul');
+                    let hasVisibleSuggestions = false;
+                    
+                    data.suggestions.forEach(suggestion => {
+                        // Don't suggest tags that are already added
+                        if (!currentTags.includes(suggestion)) {
+                             const li = document.createElement('li');
+                             li.textContent = suggestion;
+                             li.addEventListener('click', () => {
+                                 addTag(suggestion);
+                             });
+                             ul.appendChild(li);
+                             hasVisibleSuggestions = true; // Mark that we added at least one item
+                        }
+                    });
+
+                    // Only show and populate if there are suggestions to display
+                    if (hasVisibleSuggestions) {
+                        tagSuggestions.appendChild(ul);
+                        tagSuggestions.style.display = 'block'; // Show suggestions now
+                    } else {
+                        // Hide if all suggestions were duplicates or API returned only duplicates
+                        tagSuggestions.style.display = 'none';
+                    }
+                } else {
+                    // Hide if API returned no suggestions
+                    tagSuggestions.style.display = 'none';
+                }
+            } catch (error) {
+                console.error('Error fetching tag suggestions:', error);
+                tagSuggestions.style.display = 'none';
+            }
+        }
+
+        // Event listener for the tag input container (to focus input)
+        tagInputContainer.addEventListener('click', () => {
+            tagInput.focus();
+        });
+
+        // Event listener for tag input keydown
+        tagInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && tagInput.value) {
+                e.preventDefault(); // Prevent form submission
+                addTag(tagInput.value);
+            } else if (e.key === 'Backspace' && !tagInput.value && currentTags.length > 0) {
+                // Remove last tag on backspace if input is empty
+                removeTag(currentTags.length - 1);
+            }
+        });
+
+        // Event listener for tag input changes (debounced)
+        tagInput.addEventListener('input', () => {
+            clearTimeout(suggestionFetchTimeout);
+            suggestionFetchTimeout = setTimeout(() => {
+                fetchSuggestions(tagInput.value);
+            }, 150); // Reduced debounce time in ms (was 300)
+        });
+
+        // Event listener for removing tags (using event delegation)
+        tagPills.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const index = parseInt(e.target.getAttribute('data-index'), 10);
+                removeTag(index);
+                tagInput.focus(); // Keep focus on input
+            }
+        });
+
+        // Hide suggestions when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!tagInputContainer.contains(e.target)) {
+                tagSuggestions.style.display = 'none';
+            }
+        });
+
+        // File upload handler (Updated to use hidden input)
         document.getElementById('uploadForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const fileInput = document.getElementById('fileInput');
             const resultContainer = document.getElementById('resultContainer');
+            // const tagsInput = document.getElementById('tagsInput'); // NO LONGER USED
+            const tagsToSubmit = document.getElementById('tagsHiddenInput').value; // Get from hidden input
             
             if (!fileInput.files[0]) {
                 resultContainer.innerHTML = 'Please select a file.';
                 return;
             }
             
+            // Get and clean tags (Tags are already JSON string in hidden input)
+            // const tags = tagsInput.value.split(',').map(tag => tag.trim()).filter(tag => tag !== ''); // NO LONGER USED
+            
             // Create FormData object
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
+            // Append tags as a JSON string or handle on the server side
+            // if (tags.length > 0) { // Check if hidden input has value
+            if (tagsToSubmit && tagsToSubmit !== '[]') { 
+                formData.append('tags', tagsToSubmit); // Send JSON array string directly
+            }
             
             resultContainer.innerHTML = `
                 <div class="uploading">
@@ -786,6 +1010,13 @@
                     
                     // Reset the file input to allow another upload
                     fileInput.value = '';
+                    
+                    // --- Clear tags input --- 
+                    currentTags = [];
+                    renderTags(); // Clears pills and hidden input
+                    tagInput.value = ''; // Clear text input part
+                    // --- End clear tags --- 
+                    
                 } else {
                     // Display initial task status for normal processing
                     resultContainer.innerHTML = `
@@ -804,6 +1035,12 @@
                     
                     // Reset the file input to allow another upload
                     fileInput.value = '';
+                    
+                    // --- Clear tags input --- 
+                    currentTags = [];
+                    renderTags(); // Clears pills and hidden input
+                    tagInput.value = ''; // Clear text input part
+                    // --- End clear tags ---
                     
                     // Start checking the task status
                     setTimeout(() => checkTaskStatus(data.task_id, resultContainer), 2000);
@@ -897,6 +1134,7 @@
                         const mimeType = fileInfo.mime_type || 'application/octet-stream';
                         const extension = fileInfo.extension || '';
                         const size = fileInfo.size_bytes ? formatFileSize(fileInfo.size_bytes) : 'Unknown size';
+                        const tags = hit.tags || []; // Get the tags array
                         
                         // Get summary text
                         let summary = '';
@@ -955,6 +1193,13 @@
                                         <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
                                         <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
                                     </div>
+                                    
+                                    ${tags.length > 0 ? `
+                                    <div class="metadata-group">
+                                        <span class="metadata-item" style="margin-right: 5px;"><strong>Tags:</strong></span>
+                                        ${tags.map(tag => `<span style="background-color: #eee; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-right: 5px; display: inline-block;">${tag}</span>`).join('')}
+                                    </div>
+                                    ` : ''}
                                     
                                     ${dimensions ? `
                                     <div class="metadata-group">
@@ -1274,6 +1519,7 @@
                         const mimeType = fileInfo.mime_type || 'application/octet-stream';
                         const extension = fileInfo.extension || '';
                         const size = fileInfo.size_bytes ? formatFileSize(fileInfo.size_bytes) : 'Unknown size';
+                        const tags = hit.tags || []; // Get tags for duplicate view
                         
                         // Get summary text
                         let summary = '';
@@ -1308,6 +1554,13 @@
                                         <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
                                         <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
                                     </div>
+                                   
+                                   ${tags.length > 0 ? `
+                                   <div class="metadata-group">
+                                       <span class="metadata-item" style="margin-right: 5px;"><strong>Tags:</strong></span>
+                                       ${tags.map(tag => `<span style="background-color: #eee; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-right: 5px; display: inline-block;">${tag}</span>`).join('')}
+                                   </div>
+                                   ` : ''}
                                 </div>
                                 
                                 <p style="margin-top: 15px; color: #4CAF50;"><strong>This is the duplicate file already in the system.</strong></p>
@@ -1327,6 +1580,7 @@
         function forceUpload() {
             const fileInput = document.getElementById('fileInput');
             const resultContainer = document.getElementById('resultContainer');
+            const tagsToSubmit = document.getElementById('tagsHiddenInput').value; // Get tags from hidden input
             
             if (!fileInput.files[0]) {
                 resultContainer.innerHTML = '<p>Please select a file.</p>';
@@ -1336,9 +1590,12 @@
             // Create FormData object
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
+            // Append tags as a JSON string or handle on the server side
+            if (tagsToSubmit && tagsToSubmit !== '[]') { 
+                formData.append('tags', tagsToSubmit); // Send JSON array string directly
+            }
             
-            resultContainer.innerHTML = `
-                <div class="uploading">
+            resultContainer.innerHTML = `                <div class="uploading">
                     <p>Force uploading ${fileInput.files[0].name} (ignoring duplicate detection)...</p>
                     <div class="loader" style="display: block;"></div>
                 </div>
@@ -1368,6 +1625,12 @@
                 
                 // Reset the file input to allow another upload
                 fileInput.value = '';
+                
+                // --- Clear tags input --- 
+                currentTags = [];
+                renderTags(); // Clears pills and hidden input
+                tagInput.value = ''; // Clear text input part
+                // --- End clear tags ---
                 
                 // Start checking the task status
                 setTimeout(() => checkTaskStatus(data.task_id, resultContainer), 2000);

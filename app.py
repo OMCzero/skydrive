@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Body
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Body, Form
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +9,7 @@ import uuid
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
+import json
 
 # Import our modules
 from basic_metadata import extract_basic_metadata
@@ -78,7 +79,11 @@ async def check_status():
     return JSONResponse(content=status)
 
 @app.post("/upload")
-async def upload_file(file: UploadFile = File(...), allow_duplicates: bool = Query(False, description="Allow duplicate file uploads")):
+async def upload_file(
+    file: UploadFile = File(...),
+    tags: Optional[str] = Form(None, description="Comma-separated tags as a JSON string array"),
+    allow_duplicates: bool = Query(False, description="Allow duplicate file uploads")
+):
     """
     Upload a file for asynchronous processing.
     
@@ -99,6 +104,18 @@ async def upload_file(file: UploadFile = File(...), allow_duplicates: bool = Que
     
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
+    
+    # Parse tags if provided
+    tags_list = []
+    if tags:
+        try:
+            tags_list = json.loads(tags)
+            if not isinstance(tags_list, list):
+                print(f"Warning: Tags received were not a list: {tags}")
+                tags_list = []
+        except json.JSONDecodeError as e:
+            print(f"Error decoding tags JSON: {e}, Raw tags: {tags}")
+            tags_list = [] # Default to empty list on error
     
     # Get file extension from original filename
     ext = os.path.splitext(file.filename)[1]
@@ -147,7 +164,8 @@ async def upload_file(file: UploadFile = File(...), allow_duplicates: bool = Que
     # Start background processing task
     task = process_file.delay(
         temp_file_path=temp_file_path,
-        original_filename=file.filename or "unknown"
+        original_filename=file.filename or "unknown",
+        tags=tags_list
     )
     
     # Return task ID so client can check status
@@ -498,6 +516,18 @@ async def download_file(doc_id: str):
         # Log the error for debugging
         print(f"Error downloading file {doc_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
+
+@app.get("/tags/suggest")
+async def suggest_tags_endpoint(q: str = Query(..., description="Tag prefix query")):
+    """
+    Suggest existing tags based on a query prefix.
+    Uses Meilisearch facet search.
+    """
+    if not search_service.available:
+        return JSONResponse(content={"suggestions": []}, status_code=503)
+        
+    suggestions = search_service.suggest_tags(q)
+    return JSONResponse(content={"suggestions": suggestions})
 
 if __name__ == "__main__":
     import uvicorn
