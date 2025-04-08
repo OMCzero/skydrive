@@ -70,6 +70,8 @@ The easiest way to run the application is with Docker Compose:
    docker-compose down
    ```
 
+> **Development:** The quick command to re-run the app every time: `rm -rf meili_data/ uploads/ && docker compose down && docker system prune -f && docker compose down && docker compose up --build`
+
 > **Note:** The Docker configuration includes `ASSUME_OLLAMA_MODELS_EXIST=true` and `SKIP_OLLAMA_WARMUP=true` to prevent automatic checking and downloading of Ollama models inside containers. Ollama runs on your host machine for better performance, not in Docker. The containers will connect to the Ollama service running on your host.
 
 ### Manual Installation
