@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 import io
 import re
 from typing import Dict, Any, Optional
+import requests
 
 # OCR for images
 try:
@@ -52,37 +53,15 @@ except ImportError:
     PDF_TO_IMAGE_AVAILABLE = False
     print("PDF to image conversion not available - install pdf2image and poppler")
 
-# Audio/video transcription
-try:
-    import whisper
-    
-    # Configure whisper
-    WHISPER_AVAILABLE = False
-    WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "turbo")  # Options: tiny, base, small, medium, large
-    
-    # Initialize whisper model
-    try:
-        # Check which version of Whisper we're using (newer versions have available_device())
-        if hasattr(whisper, "available_device"):
-            device = whisper.available_device()
-            print(f"Initializing Whisper with '{WHISPER_MODEL}' model on {device}")
-        else:
-            # Older versions default to CPU or CUDA if available
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            print(f"Initializing Whisper with '{WHISPER_MODEL}' model on {device}")
-            
-        # Initialize the model (this will download it if not present)
-        whisper_model = whisper.load_model(WHISPER_MODEL)
-        WHISPER_AVAILABLE = True
-        print(f"Whisper media transcription available (using {WHISPER_MODEL} model on {device})")
-    except Exception as whisper_error:
-        print(f"Whisper initialization failed: {str(whisper_error)}")
-        WHISPER_AVAILABLE = False
-        
-except ImportError:
-    WHISPER_AVAILABLE = False
-    print("Whisper transcription not available - install openai-whisper")
+# Transcription API configuration
+TRANSCRIPTION_API_URL = os.environ.get("TRANSCRIPTION_API_URL")
+TRANSCRIPTION_API_AVAILABLE = bool(TRANSCRIPTION_API_URL)
+
+if TRANSCRIPTION_API_AVAILABLE:
+    print(f"Transcription API configured at: {TRANSCRIPTION_API_URL}")
+    # Test connectivity? Maybe later.
+else:
+    print("Transcription API URL not configured (TRANSCRIPTION_API_URL env var). Audio/video transcription disabled.")
 
 # LLM for text summarization with Ollama
 try:
@@ -427,7 +406,7 @@ def extract_text_from_plaintext(file_path: str) -> Dict[str, Any]:
 
 def transcribe_audio_video(file_path: str) -> Dict[str, Any]:
     """
-    Transcribe speech from audio or video files using Whisper.
+    Transcribe speech from audio or video files using an external API.
     
     Args:
         file_path: Path to the audio or video file
@@ -435,46 +414,51 @@ def transcribe_audio_video(file_path: str) -> Dict[str, Any]:
     Returns:
         Dict with transcribed text and metadata
     """
-    if not WHISPER_AVAILABLE:
-        return {"extracted_text": "", "error": "Whisper transcription not available", "method": "none"}
+    if not TRANSCRIPTION_API_AVAILABLE:
+        return {"extracted_text": "", "error": "Transcription API not configured", "method": "none"}
     
     try:
-        # Use whisper to transcribe
-        result = whisper_model.transcribe(file_path)
-        
+        # Call the external transcription API
+        with open(file_path, "rb") as f:
+            files = {"file": (os.path.basename(file_path), f)}
+            response = requests.post(TRANSCRIPTION_API_URL, files=files, timeout=600) # 10 minute timeout
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            
         # Extract transcription text
-        transcribed_text = result.get("text", "")
+        result_json = response.json()
+        transcribed_text = result_json.get("text", "")
         
         # Create result
         output = {
             "extracted_text": transcribed_text.strip(),
-            "method": "whisper_transcription",
-            "model": WHISPER_MODEL,
+            "method": "api_transcription",
+            "api_url": TRANSCRIPTION_API_URL,
             "text_length": len(transcribed_text),
             "word_count": len(transcribed_text.split()) if transcribed_text else 0
         }
         
-        # Add segments if available
-        if "segments" in result:
-            output["segments"] = [
-                {
-                    "start": segment.get("start"),
-                    "end": segment.get("end"),
-                    "text": segment.get("text", "").strip()
-                }
-                for segment in result["segments"]
-            ]
-        
+        # Include other potential fields from the API response if they exist
+        if "segments" in result_json:
+             output["segments"] = result_json["segments"] # Assuming API returns segments in a compatible format
+        if "language" in result_json:
+            output["language"] = result_json["language"]
+
         # Add LLM summary if available and text is substantial
         if OLLAMA_AVAILABLE and len(transcribed_text.strip()) > 100:
             output.update(generate_text_summary(transcribed_text))
             
         return output
+    except requests.exceptions.RequestException as e:
+        return {
+            "extracted_text": "",
+            "error": f"Failed to call transcription API: {str(e)}",
+            "method": "api_transcription_failed"
+        }
     except Exception as e:
         return {
             "extracted_text": "",
-            "error": f"Failed to transcribe audio/video: {str(e)}",
-            "method": "whisper_failed"
+            "error": f"Failed to process transcription result: {str(e)}",
+            "method": "api_transcription_failed"
         }
 
 def generate_text_summary(text: str) -> Dict[str, Any]:
@@ -565,7 +549,7 @@ def extract_text(file_path: str, mime_type: str) -> Dict[str, Any]:
         extraction_result = extract_text_from_docx(file_path)
     elif mime_type.startswith('text/'):
         extraction_result = extract_text_from_plaintext(file_path)
-    elif mime_type.startswith(('audio/', 'video/')) and WHISPER_AVAILABLE:
+    elif mime_type.startswith(('audio/', 'video/')) and TRANSCRIPTION_API_AVAILABLE:
         extraction_result = transcribe_audio_video(file_path)
     else:
         # Try plaintext for unknown types

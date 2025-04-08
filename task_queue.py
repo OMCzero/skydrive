@@ -72,18 +72,22 @@ def ping():
     return "pong"
 
 @celery_app.task(bind=True)
-def process_file(self, temp_file_path: str, original_filename: str) -> Dict[str, Any]:
+def process_file(self, temp_file_path: str, original_filename: str, tags: Optional[List[str]] = None) -> Dict[str, Any]:
     """
     Process a file asynchronously.
     
     Args:
         temp_file_path: Path to the temporary file
         original_filename: Original filename of the uploaded file
+        tags: Optional list of user-provided tags
         
     Returns:
         Dict containing the file metadata
     """
     task_id = self.request.id
+    # Use provided tags or default to empty list
+    tags_list = tags if tags is not None else []
+    
     update_task_status(
         task_id=task_id, 
         status="PROCESSING", 
@@ -97,6 +101,9 @@ def process_file(self, temp_file_path: str, original_filename: str) -> Dict[str,
             file_path=temp_file_path,
             original_filename=original_filename
         )
+        
+        # Add user-provided tags to the metadata
+        metadata["tags"] = tags_list
         
         # Get file extension from original filename
         ext = os.path.splitext(original_filename)[1]

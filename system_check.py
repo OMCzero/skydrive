@@ -7,6 +7,7 @@ import json
 import sys
 from typing import Dict, Any, List, Optional
 import subprocess
+import requests
 
 def check_tlsh():
     """Check if TLSH fuzzy hashing is available"""
@@ -55,6 +56,47 @@ def check_magika():
             return {"status": "error", "message": f"Magika initialization failed: {str(init_error)}"}
     except ImportError:
         return {"status": "unavailable", "message": "Magika not available - advanced file type detection disabled"}
+
+def check_transcription_api():
+    """Check if the Transcription API is configured"""
+    try:
+        # Import the module dynamically
+        text_extraction = importlib.import_module("enrichment.text_extraction")
+        
+        # Check transcription API variables
+        api_available = getattr(text_extraction, "TRANSCRIPTION_API_AVAILABLE", False)
+        api_url = getattr(text_extraction, "TRANSCRIPTION_API_URL", None)
+        
+        if api_available and api_url:
+            # Optional: Add a quick check to see if the endpoint is reachable
+            try:
+                response = requests.head(api_url, timeout=5) # Use HEAD to be lightweight
+                response.raise_for_status() # Check for 4xx/5xx errors
+                return {
+                    "status": "available", 
+                    "message": f"Transcription API is configured and reachable at {api_url}"
+                }
+            except requests.exceptions.RequestException as req_err:
+                 return {
+                    "status": "partial", 
+                    "message": f"Transcription API is configured at {api_url}, but connectivity check failed: {str(req_err)}"
+                }
+        elif api_url:
+             # Configured but flag is somehow false
+              return {
+                 "status": "error", 
+                 "message": f"Transcription API URL ({api_url}) is set, but TRANSCRIPTION_API_AVAILABLE is False."
+              }
+        else:
+            return {
+                "status": "unavailable", 
+                "message": "Transcription API URL is not configured (TRANSCRIPTION_API_URL env var missing)"
+            }
+    except (ImportError, AttributeError) as e:
+        return {"status": "error", "message": f"Error checking Transcription API configuration: {str(e)}"}
+    except Exception as e:
+        # Catch other potential errors during import or attribute access
+        return {"status": "error", "message": f"Unexpected error checking Transcription API: {str(e)}"}
 
 def check_whisper():
     """Check if Whisper transcription is available"""
@@ -316,7 +358,7 @@ def get_system_status() -> Dict[str, Any]:
     status = {
         "tlsh": check_tlsh(),
         "magika": check_magika(),
-        "whisper": check_whisper(),
+        "transcription_api": check_transcription_api(),
         "ollama": check_ollama(),
         "exiftool": check_exiftool(),
         "redis": check_redis(),

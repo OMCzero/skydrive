@@ -21,7 +21,7 @@
   - PDF text extraction with OCR fallback
   - Word document text extraction
   - Plain text files with encoding detection
-  - Audio transcription using OpenAI's Whisper (runs locally)
+  - Audio transcription using an external Transcription API (requires separate `transcription_server.py`)
 - Modular enrichment system for different file types
 - Task status tracking and task history
 - LLM-based text summarization and image description
@@ -63,6 +63,11 @@ The easiest way to run the application is with Docker Compose:
    docker-compose up -d
    ```
 
+   > **Note on External Services:** This setup assumes **Ollama** and the **Transcription Server** (`transcription_server.py`) are running on your **host machine**, not within Docker containers. The containers are configured to connect to these services via `host.docker.internal`.
+   >
+   > - **Ollama:** Ensure Ollama is installed and running locally. The `OLLAMA_HOST` environment variable in `.env` points to it.
+   > - **Transcription Server:** You need to run the `transcription_server.py` script separately on a machine with sufficient resources (CPU/GPU) for audio processing. Start it using `python transcription_server.py`. The `TRANSCRIPTION_API_URL` environment variable in `.env` points to its endpoint (default: `http://host.docker.internal:9000/transcribe/`).
+
 5. Access the application at http://localhost:8000
 
 6. To stop the application:
@@ -70,7 +75,7 @@ The easiest way to run the application is with Docker Compose:
    docker-compose down
    ```
 
-> **Note:** The Docker configuration includes `ASSUME_OLLAMA_MODELS_EXIST=true` and `SKIP_OLLAMA_WARMUP=true` to prevent automatic checking and downloading of Ollama models inside containers. Ollama runs on your host machine for better performance, not in Docker. The containers will connect to the Ollama service running on your host.
+> **Development:** The quick command to re-run the app every time: `rm -rf meili_data/ uploads/ && docker compose down && docker system prune -f && docker compose down && docker compose up --build`
 
 ### Manual Installation
 
@@ -81,7 +86,6 @@ The easiest way to run the application is with Docker Compose:
 - ExifTool (for enhanced metadata extraction)
 - Tesseract OCR (for text extraction from images)
 - Poppler (for PDF to image conversion for OCR)
-- FFmpeg (for audio processing with Whisper)
 - Meilisearch (for search functionality)
 - Ollama (for LLM text summarization and image description)
 
@@ -117,13 +121,21 @@ The easiest way to run the application is with Docker Compose:
    python worker.py
    ```
 
-6. Run the application:
+6. Run the Transcription Server (in a separate terminal, on a machine with suitable resources):
+   ```bash
+   # Ensure you have installed requirements for the server (e.g., whisper, fastapi, uvicorn)
+   # pip install openai-whisper fastapi uvicorn python-multipart
+   python transcription_server.py
+   ```
+
+7. Run the main application (in another terminal):
    ```bash
    export MEILISEARCH_API_KEY="masterKey"
+   export TRANSCRIPTION_API_URL="http://localhost:9000/transcribe/" # Adjust if server runs elsewhere
    uvicorn app:app --reload
    ```
 
-7. Access the web interface at http://localhost:8000
+8. Access the web interface at http://localhost:8000
 
 ## API Documentation
 

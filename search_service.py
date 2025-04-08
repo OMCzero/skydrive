@@ -179,7 +179,10 @@ class SearchService:
                 "perceptual_hashes.phash",
                 "perceptual_hashes.dhash",
                 "perceptual_hashes.ahash",
-                "perceptual_hashes.whash"
+                "perceptual_hashes.whash",
+
+                # User-provided tags
+                "tags"
             ])
             
             # Configure filterable attributes (for faceted search)
@@ -222,7 +225,10 @@ class SearchService:
                 # Temporal
                 "upload_date",
                 "text_extraction.metadata.transcription_model",
-                "text_extraction.metadata.llm_summary_model"
+                "text_extraction.metadata.llm_summary_model",
+                
+                # User-provided tags
+                "tags"
             ])
             
             # Configure ranking rules
@@ -308,6 +314,10 @@ class SearchService:
             if "file_info" in document:
                 document["file_info"]["size_category"] = size_category
         
+        # Ensure tags field exists, even if empty, for consistent schema
+        if "tags" not in document:
+            document["tags"] = []
+        
         return document
     
     def search(self, query: str, filters: Optional[Dict[str, Any]] = None, limit: int = 20) -> Dict[str, Any]:
@@ -359,6 +369,42 @@ class SearchService:
         except Exception as search_error:
             print(f"Search error: {str(search_error)}")
             return {"hits": [], "error": str(search_error)}
+    
+    def suggest_tags(self, query: str, limit: int = 10) -> List[str]:
+        """
+        Suggest existing tags based on a query prefix using facet search.
+
+        Args:
+            query: The prefix to search for in tags.
+            limit: Maximum number of suggestions to return.
+
+        Returns:
+            A list of matching tag suggestions.
+        """
+        if not self.available or not self.index:
+            print("Tag suggestion unavailable: Search service not ready.")
+            return []
+
+        try:
+            # Perform facet search on the 'tags' field
+            # Note: Requires 'tags' to be in filterable_attributes
+            results = self.index.facet_search(
+                facet_name="tags", 
+                facet_query=query 
+            )
+
+            # Extract the tag names from the results
+            # The structure is {'facetHits': [{'value': 'tag_name', 'count': N}, ...]}
+            if results and "facetHits" in results:
+                suggestions = [hit["value"] for hit in results["facetHits"]]
+                print(f"Tag suggestions for '{query}': {suggestions}")
+                return suggestions
+            else:
+                print(f"No facet hits found for query '{query}'. Results: {results}")
+                return []
+        except Exception as suggest_error:
+            print(f"Error suggesting tags for query '{query}': {str(suggest_error)}")
+            return []
     
     def delete_document(self, doc_id: str) -> bool:
         """
