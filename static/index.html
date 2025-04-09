@@ -773,37 +773,26 @@
                 const response = await fetch(`/task/${taskId}`);
                 const taskData = await response.json();
                 
-                // Format task data for display
-                let formattedData = {
-                    task_id: taskData.task_id,
-                    status: taskData.status,
-                    message: taskData.message,
-                    updated_at: taskData.updated_at
-                };
+                // Ensure task_id is displayed properly
+                const displayTaskId = taskData.task_id || taskId || 'unknown';
+                const statusClass = taskData.status ? taskData.status.toLowerCase() : 'unknown';
                 
-                // If task has metadata (i.e., is complete), display it
-                if (taskData.metadata) {
-                    formattedData.metadata = taskData.metadata;
-                }
-                
-                // If task has an error, display it
-                if (taskData.error) {
-                    formattedData.error = taskData.error;
-                }
-                
-                // Ensure task_id is displayed properly (it should always be present)
-                // Use the original taskId parameter to avoid variable redeclaration
-                const displayTaskId = taskData.task_id || 'unknown';
+                // Determine if we should show a loader next to the message
+                const showLoader = taskData.status === 'PROCESSING';
                 
                 resultContainer.innerHTML = `
-                    <div class="task-status ${taskData.status.toLowerCase()}">
+                    <div class="task-status ${statusClass}">
                         <h3>Task: ${displayTaskId}</h3>
                         <p><strong>Status:</strong> ${taskData.status}</p>
-                        <p><strong>Message:</strong> ${taskData.message}</p>
+                        <p>
+                            <strong>Progress:</strong> 
+                            ${taskData.message} 
+                            ${showLoader ? '<div class="loader" style="display: inline-block; width: 12px; height: 12px; border-width: 2px; margin-left: 5px; vertical-align: middle;"></div>' : ''}
+                        </p>
                         <p><strong>Last Updated:</strong> ${new Date(taskData.updated_at).toLocaleString()}</p>
                     </div>
                     
-                    ${taskData.status === 'SUCCESS' ? 
+                    ${taskData.status === 'SUCCESS' && taskData.metadata ? 
                         `<div class="result-data">
                             <h3>Processing Results:</h3>
                             <pre>${JSON.stringify(taskData.metadata, null, 2)}</pre>
@@ -821,12 +810,19 @@
                 `;
                 
                 // If the task is not in a final state, continue checking
-                // Use the original taskId parameter for the recursive call
                 if (['PENDING', 'PROCESSING'].includes(taskData.status)) {
                     setTimeout(() => checkTaskStatus(taskId, resultContainer), 2000);
                 } else {
-                    // Task is complete, refresh system status
+                    // Task is complete, refresh system status and potentially the tasks list if visible
                     setTimeout(fetchSystemStatus, 1000);
+                    // Optionally refresh tasks list if the tasks tab is active
+                    const tasksTab = document.querySelector('.tab[data-tab="tasks"]');
+                    if (tasksTab && tasksTab.classList.contains('active')) {
+                         // Use current filters and page from state
+                        const statusFilter = document.getElementById('taskStatusFilter').value;
+                        const includeMetadata = document.getElementById('includeMetadata').checked;
+                        loadTasks(statusFilter, false, taskPageState.currentPage, includeMetadata);
+                    }
                 }
                 
             } catch (error) {

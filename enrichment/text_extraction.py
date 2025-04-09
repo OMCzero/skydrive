@@ -404,164 +404,241 @@ def extract_text_from_plaintext(file_path: str) -> Dict[str, Any]:
             "method": "plaintext_failed"
         }
 
-def transcribe_audio_video(file_path: str) -> Dict[str, Any]:
+def transcribe_audio_video(file_path: str, 
+                           task_id: Optional[str] = None, 
+                           original_filename: Optional[str] = None, 
+                           update_status_func: Optional[callable] = None) -> Dict[str, Any]:
     """
-    Transcribe speech from audio or video files using an external API.
+    Transcribe audio or video using an external API.
     
     Args:
-        file_path: Path to the audio or video file
+        file_path: Path to the audio/video file
+        task_id: Optional task ID for status updates
+        original_filename: Optional original filename for status updates
+        update_status_func: Optional function to update status
         
     Returns:
-        Dict with transcribed text and metadata
+        Dict with transcription result
     """
+    # Helper function to safely call the update status function
+    def _update_status(message: str):
+        if task_id and update_status_func and original_filename:
+            try:
+                update_status_func(task_id, "PROCESSING", message, filename=original_filename)
+            except Exception as e:
+                print(f"Error calling update_status_func from text_extraction: {e}")
+                
     if not TRANSCRIPTION_API_AVAILABLE:
         return {"extracted_text": "", "error": "Transcription API not configured", "method": "none"}
     
     try:
-        # Call the external transcription API
-        with open(file_path, "rb") as f:
-            files = {"file": (os.path.basename(file_path), f)}
-            response = requests.post(TRANSCRIPTION_API_URL, files=files, timeout=600) # 10 minute timeout
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+        _update_status("Preparing file for transcription API...")
+        with open(file_path, 'rb') as f:
+            files = {'file': f}
             
-        # Extract transcription text
-        result_json = response.json()
-        transcribed_text = result_json.get("text", "")
-        
-        # Create result
-        output = {
-            "extracted_text": transcribed_text.strip(),
-            "method": "api_transcription",
-            "api_url": TRANSCRIPTION_API_URL,
-            "text_length": len(transcribed_text),
-            "word_count": len(transcribed_text.split()) if transcribed_text else 0
-        }
-        
-        # Include other potential fields from the API response if they exist
-        if "segments" in result_json:
-             output["segments"] = result_json["segments"] # Assuming API returns segments in a compatible format
-        if "language" in result_json:
-            output["language"] = result_json["language"]
-
-        # Add LLM summary if available and text is substantial
-        if OLLAMA_AVAILABLE and len(transcribed_text.strip()) > 100:
-            output.update(generate_text_summary(transcribed_text))
+            # --- Call Transcription API (Potentially long) ---
+            _update_status("Transcribing audio/video...")
+            response = requests.post(TRANSCRIPTION_API_URL, files=files, timeout=3600) # Timeout 1 hour
+            _update_status("Transcription API response received.")
             
-        return output
+        if response.status_code == 200:
+            result = response.json()
+            extracted_text = result.get('transcription', '')
+            
+            transcription_result = {
+                "extracted_text": extracted_text.strip(),
+                "method": "external_transcription_api",
+                "text_length": len(extracted_text),
+                "word_count": len(extracted_text.split()) if extracted_text else 0,
+                "api_metadata": result.get('metadata') # Include any extra metadata from API
+            }
+            
+            # Add LLM summary if available and text is substantial
+            if OLLAMA_AVAILABLE and len(extracted_text.strip()) > 100:
+                # Pass status update args down
+                summary_result = generate_text_summary(
+                    extracted_text, 
+                    task_id=task_id, 
+                    original_filename=original_filename, 
+                    update_status_func=update_status_func
+                )
+                transcription_result.update(summary_result)
+            
+            return transcription_result
+        else:
+            error_msg = f"Transcription API failed with status {response.status_code}: {response.text}"
+            _update_status(f"Transcription failed: {response.status_code}")
+            return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_failed"}
+            
     except requests.exceptions.RequestException as e:
-        return {
-            "extracted_text": "",
-            "error": f"Failed to call transcription API: {str(e)}",
-            "method": "api_transcription_failed"
-        }
+        error_msg = f"Error connecting to transcription API: {str(e)}"
+        _update_status("Transcription failed: Connection error")
+        return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_failed"}
     except Exception as e:
-        return {
-            "extracted_text": "",
-            "error": f"Failed to process transcription result: {str(e)}",
-            "method": "api_transcription_failed"
-        }
+        error_msg = f"Error during transcription: {str(e)}"
+        _update_status("Transcription failed: Unknown error")
+        return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_failed"}
 
-def generate_text_summary(text: str) -> Dict[str, Any]:
+def generate_text_summary(text: str, 
+                          task_id: Optional[str] = None, 
+                          original_filename: Optional[str] = None, 
+                          update_status_func: Optional[callable] = None) -> Dict[str, Any]:
     """
-    Generate a summary of the extracted text using Ollama LLM.
+    Generate a summary of the provided text using Ollama.
     
     Args:
         text: The text to summarize
+        task_id: Optional task ID for status updates
+        original_filename: Optional original filename for status updates
+        update_status_func: Optional function to update status
         
     Returns:
-        Dict with summary and metadata
+        Dict containing the summary and metadata, or an error
     """
+    # Helper function to safely call the update status function
+    def _update_status(message: str):
+        if task_id and update_status_func and original_filename:
+            try:
+                update_status_func(task_id, "PROCESSING", message, filename=original_filename)
+            except Exception as e:
+                print(f"Error calling update_status_func from text_extraction: {e}")
+                
     if not OLLAMA_AVAILABLE:
-        return {"llm_summary": "", "llm_error": "Ollama not available"}
+        return {"llm_summary": "", "llm_error": "Ollama not available for summarization"}
+    
+    if not text or len(text.strip()) < 100:
+        return {"llm_summary": "", "llm_metadata": {"reason": "Text too short for summary"}}
     
     try:
+        # Limit text length to avoid excessive token usage (e.g., first 5000 chars)
+        max_chars = 5000
+        truncated_text = text[:max_chars]
+        if len(text) > max_chars:
+            truncated_text += "... (text truncated for summarization)"
+            
         # Prepare the prompt for summarization
         prompt = f"""
-        Here's some text extracted from a document. Please provide a concise 2-3 sentence summary:
-
-        {text[:10000]}  # Limit to first 10K chars to avoid context overflow
+        Summarize the following text in about 50-70 words. 
+        Focus on the key topics and entities mentioned. 
+        Provide the summary as a single paragraph.
         
-        Provide only the summary in plain text format. No preamble or explanation.
+        Text:
+        {truncated_text}
+        
+        Summary:
         """
         
-        # Set a seed for more consistent summaries
+        # Configure generation parameters
         generation_seed = 42
+        temperature = 0.5
+        top_p = 0.9
+        num_predict = 150 # Limit summary tokens
         
-        # Query the model
+        # --- Call LLM for Summarization (Potentially long) ---
+        _update_status(f"Generating summary...")
         response = ollama_client.generate(
             model=OLLAMA_MODEL,
             prompt=prompt,
             options={
                 "seed": generation_seed,
-                "temperature": 0.3,
-                "top_p": 0.9
+                "temperature": temperature,
+                "top_p": top_p,
+                "num_predict": num_predict
             }
         )
+        _update_status(f"LLM summary response received.")
         
-        # Extract the summary
+        # Extract and clean up the summary
         if hasattr(response, 'response'):
             summary = response.response
         else:
             summary = response.get("response", "")
+            
+        summary = re.sub(r'^\s*(\*|\-|\#|\>|\d+\.)\s*', '', summary)  # Remove leading markdown
+        summary = re.sub(r'\n+', ' ', summary).strip() # Replace newlines, strip whitespace
         
-        # Process the summary to remove common artifacts
-        summary = re.sub(r'^\s*(\*|\-|\#|\>|\d+\.)\s*', '', summary)  # Remove leading markdown formatting
-        summary = re.sub(r'\n+', ' ', summary)  # Replace newlines with spaces
-        summary = re.sub(r'\s+', ' ', summary)  # Replace multiple spaces with a single space
-        summary = summary.strip()
-        
-        # Return the summary
         return {
             "llm_summary": summary,
-            "llm_summary_model": OLLAMA_MODEL,
-            "llm_summary_tokens_processed": getattr(response, 'prompt_eval_count', 0) if hasattr(response, 'prompt_eval_count') else response.get("prompt_eval_count", 0),
-            "llm_summary_tokens_generated": getattr(response, 'eval_count', 0) if hasattr(response, 'eval_count') else response.get("eval_count", 0),
+            "llm_metadata": {
+                "model": OLLAMA_MODEL,
+                "provider": "ollama",
+                "generated_tokens": getattr(response, 'eval_count', 0) if hasattr(response, 'eval_count') else response.get("eval_count", 0),
+                "generation_settings": {
+                    "seed": generation_seed,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "truncated_input": len(text) > max_chars
+                }
+            }
         }
+        
     except Exception as e:
-        return {
-            "llm_summary": "",
-            "llm_error": f"Failed to generate summary: {str(e)}"
-        }
+        error_msg = f"Failed to generate text summary: {str(e)}"
+        _update_status(f"LLM summarization failed: {str(e)}")
+        return {"llm_summary": "", "llm_error": error_msg}
 
-def extract_text(file_path: str, mime_type: str) -> Dict[str, Any]:
+def extract_text(file_path: str, mime_type: str, 
+                 task_id: Optional[str] = None, 
+                 original_filename: Optional[str] = None, 
+                 update_status_func: Optional[callable] = None) -> Dict[str, Any]:
     """
-    Extract text from a file based on its MIME type.
+    Extract text content from a file based on its MIME type.
+    Handles different file types and calls appropriate extraction functions.
+    Also attempts to generate a summary using an LLM if text is found.
     
     Args:
         file_path: Path to the file
         mime_type: MIME type of the file
+        task_id: Optional task ID for status updates
+        original_filename: Optional original filename for status updates
+        update_status_func: Optional function to update status
         
     Returns:
-        Dict containing the extracted text and metadata
+        Dict containing extracted text, metadata, and potentially a summary
     """
     result = {
-        "file_path": file_path,
-        "mime_type": mime_type,
-        "extension": os.path.splitext(file_path)[1].lower()
+        "extracted_text": "",
+        "metadata": {"method": "none"}
     }
     
-    # Determine how to extract text based on MIME type
-    if mime_type.startswith('image/'):
-        extraction_result = extract_text_from_image(file_path)
-    elif mime_type == 'application/pdf':
-        extraction_result = extract_text_from_pdf(file_path)
-    elif mime_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
-        extraction_result = extract_text_from_docx(file_path)
-    elif mime_type.startswith('text/'):
-        extraction_result = extract_text_from_plaintext(file_path)
-    elif mime_type.startswith(('audio/', 'video/')) and TRANSCRIPTION_API_AVAILABLE:
-        extraction_result = transcribe_audio_video(file_path)
-    else:
-        # Try plaintext for unknown types
-        extraction_result = extract_text_from_plaintext(file_path)
-        if not extraction_result.get("extracted_text"):
-            extraction_result = {
-                "extracted_text": "",
-                "error": f"No text extraction method available for MIME type: {mime_type}",
-                "method": "none"
-            }
-    
-    # Add the extraction result to the overall result
-    result.update(extraction_result)
-    
+    try:
+        if mime_type.startswith('image/'):
+            result = extract_text_from_image(file_path)
+        elif mime_type == 'application/pdf':
+            result = extract_text_from_pdf(file_path)
+        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+            result = extract_text_from_docx(file_path)
+        elif mime_type.startswith('text/'):
+            result = extract_text_from_plaintext(file_path)
+        elif mime_type.startswith('audio/') or mime_type.startswith('video/'):
+             # Pass status update args down to transcription
+             result = transcribe_audio_video(
+                 file_path, 
+                 task_id=task_id, 
+                 original_filename=original_filename, 
+                 update_status_func=update_status_func
+             )
+        else:
+            result["metadata"]["method"] = "unsupported_mime_type"
+        
+        # If text was extracted (and not via transcription which handles its own summary), try summarizing
+        extracted_text = result.get("extracted_text", "")
+        if extracted_text and OLLAMA_AVAILABLE and result["metadata"]["method"] not in ["external_transcription_api", "none", "unsupported_mime_type"]:
+            # Check if it's substantial enough for summary
+            if len(extracted_text.strip()) > 100:
+                 # Pass status update args down to summarization
+                 summary_result = generate_text_summary(
+                     extracted_text, 
+                     task_id=task_id, 
+                     original_filename=original_filename, 
+                     update_status_func=update_status_func
+                 )
+                 result.update(summary_result) # Add summary fields to the main result
+            else:
+                result["llm_summary"] = "" # Indicate no summary generated due to length
+                result["llm_metadata"] = {"reason": "Text too short for summary"}
+                
+    except Exception as e:
+        result["error"] = f"Error during text extraction: {str(e)}"
+        
     return result
