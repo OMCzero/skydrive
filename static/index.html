@@ -1278,24 +1278,64 @@
         }
         
         // Search input listeners
-        document.getElementById('searchButton').addEventListener('click', performSearch);
-        document.getElementById('searchInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
+        // Remove explicit button click listener and Enter keypress listener
+        // document.getElementById('searchButton').addEventListener('click', performSearch);
+        // document.getElementById('searchInput').addEventListener('keypress', function(e) {
+        //     if (e.key === 'Enter') {
+        //         performSearch();
+        //     }
+        // });
+        
+        // Add debounced input listener for search-as-you-type
+        let searchDebounceTimeout;
+        document.getElementById('searchInput').addEventListener('input', function() {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(() => {
                 performSearch();
-            }
+            }, 300); // Debounce time in ms (e.g., 300ms)
+        });
+
+        // Keep explicit button click as well
+        document.getElementById('searchButton').addEventListener('click', () => {
+            clearTimeout(searchDebounceTimeout); // Cancel any pending debounced search
+            performSearch(); // Trigger search immediately
         });
         
-        // Basic filter change listeners
-        document.getElementById('mimeTypeFilter').addEventListener('change', performSearch);
-        document.getElementById('extensionFilter').addEventListener('change', performSearch);
-        document.getElementById('sizeFilter').addEventListener('change', performSearch);
+        // Basic filter change listeners (these will now trigger debounced searches)
+        document.getElementById('mimeTypeFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('extensionFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('sizeFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
         
-        // Advanced filter change listeners
-        document.getElementById('cameraMakeFilter').addEventListener('change', performSearch);
-        document.getElementById('colorModeFilter').addEventListener('change', performSearch);
-        document.getElementById('isAnimatedFilter').addEventListener('change', performSearch);
-        document.getElementById('textEncodingFilter').addEventListener('change', performSearch);
-        document.getElementById('textFormatFilter').addEventListener('change', performSearch);
+        // Advanced filter change listeners (these will also trigger debounced searches)
+        document.getElementById('cameraMakeFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('colorModeFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('isAnimatedFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('textEncodingFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('textFormatFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
         
         // Global state for task pagination
         const taskPageState = {
