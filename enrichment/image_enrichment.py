@@ -96,16 +96,30 @@ except ImportError:
     OLLAMA_VISION_AVAILABLE = False
     print("Ollama not available for image description - install the 'ollama' Python package")
 
-def generate_image_description(file_path: str) -> Dict[str, Any]:
+def generate_image_description(file_path: str, 
+                             task_id: Optional[str] = None, 
+                             original_filename: Optional[str] = None, 
+                             update_status_func: Optional[callable] = None) -> Dict[str, Any]:
     """
     Generate a description of an image using Ollama's multimodal capabilities.
     
     Args:
         file_path: Path to the image file
+        task_id: Optional task ID for status updates
+        original_filename: Optional original filename for status updates
+        update_status_func: Optional function to update status
         
     Returns:
         Dict containing the image description and metadata
     """
+    # Helper function to safely call the update status function
+    def _update_status(message: str):
+        if task_id and update_status_func and original_filename:
+            try:
+                update_status_func(task_id, "PROCESSING", message, filename=original_filename)
+            except Exception as e:
+                print(f"Error calling update_status_func from image_enrichment: {e}")
+                
     if not OLLAMA_AVAILABLE or not OLLAMA_VISION_AVAILABLE:
         return {
             "error": "Ollama vision not available",
@@ -113,6 +127,7 @@ def generate_image_description(file_path: str) -> Dict[str, Any]:
         }
     
     try:
+        _update_status(f"Preparing image for vision analysis...")
         # Read the image file
         with open(file_path, "rb") as f:
             image_bytes = f.read()
@@ -136,7 +151,8 @@ def generate_image_description(file_path: str) -> Dict[str, Any]:
         Format the response as a single paragraph with no headings or bullet points.
         """
         
-        # Query the model with the image
+        # --- Call LLM (Potentially long) ---
+        _update_status(f"Generating description of image...")
         response = ollama_client.generate(
             model=OLLAMA_MODEL,
             prompt=prompt,
@@ -148,6 +164,7 @@ def generate_image_description(file_path: str) -> Dict[str, Any]:
                 "num_predict": num_predict
             }
         )
+        _update_status(f"Processing...")
         
         # Extract and clean up the description
         if hasattr(response, 'response'):
@@ -186,27 +203,37 @@ def generate_image_description(file_path: str) -> Dict[str, Any]:
             "traceback": traceback.format_exc()
         }
 
-def enrich_image(file_path: str) -> Dict[str, Any]:
+def enrich_image(file_path: str,
+                 task_id: Optional[str] = None, 
+                 original_filename: Optional[str] = None, 
+                 update_status_func: Optional[callable] = None) -> Dict[str, Any]:
     """
-    Extract image-specific metadata from an image file.
-    
-    This function analyzes an image file to extract detailed image information
-    such as dimensions, color statistics, and perceptual hashes.
+    Extract image-specific metadata from an image file, including LLM description if available.
     
     Args:
         file_path: Path to the image file
+        task_id: Optional task ID for status updates
+        original_filename: Optional original filename for status updates
+        update_status_func: Optional function to update status
         
     Returns:
-        Dict containing image metadata
+        Dict containing image metadata (including llm_description)
     """
     if not PILLOW_AVAILABLE:
         return {"error": "Image enrichment unavailable - PIL/Pillow library not installed"}
     
+    # Helper function to safely call the update status function
+    def _update_status(message: str):
+        if task_id and update_status_func and original_filename:
+            try:
+                update_status_func(task_id, "PROCESSING", message, filename=original_filename)
+            except Exception as e:
+                print(f"Error calling update_status_func from image_enrichment: {e}")
+
     try:
-        # Open the image file
+        # --- Basic Image Info ---
+        _update_status("Extracting basic image properties (dimensions, format, mode)...")
         img = Image.open(file_path)
-        
-        # Basic image information
         info = {
             "width": img.width,
             "height": img.height,
@@ -250,31 +277,36 @@ def enrich_image(file_path: str) -> Dict[str, Any]:
             try:
                 palette = img.getpalette()
                 if palette:
-                    # Format palette as RGB triplets, limit to 10 colors for brevity
-                    colors = []
-                    for i in range(0, min(30, len(palette)), 3):
-                        colors.append(f"#{palette[i]:02x}{palette[i+1]:02x}{palette[i+2]:02x}")
-                    info["palette"] = colors
+                    info["palette"] = palette[:768] # Store RGB palette (max 256 colors)
             except Exception as e:
-                info["palette_error"] = str(e)
+                info["palette"] = {"error": str(e)}
         
-        # Get image description using LLM
+        # --- LLM Description ---
+        # Generate description using the helper function if vision is available
         if OLLAMA_AVAILABLE and OLLAMA_VISION_AVAILABLE:
-            description_result = generate_image_description(file_path)
+            # Pass status update args to the description function
+            llm_result = generate_image_description(
+                file_path,
+                task_id=task_id, 
+                original_filename=original_filename, 
+                update_status_func=update_status_func
+            )
             
-            if "description" in description_result:
-                info["llm_description"] = description_result["description"]
-                info["llm_metadata"] = description_result.get("metadata", {})
+            if "error" not in llm_result:
+                info["llm_description"] = llm_result.get("description")
+                info["llm_metadata"] = llm_result.get("metadata")
             else:
-                info["llm_description"] = description_result.get("error", "Unknown error")
+                # Store the error if generation failed
+                info["llm_description_error"] = llm_result.get("error")
+                _update_status(f"Vision LLM description failed: {llm_result.get('error')}")
         
-        # Clean up
-        img.close()
-        
+        # Return the enriched information
         return info
+        
     except Exception as e:
-        # Return error information
+        print(f"Error enriching image: {str(e)}")
+        traceback.print_exc()
         return {
-            "error": f"Failed to process image: {str(e)}",
+            "error": f"Failed to enrich image: {str(e)}",
             "traceback": traceback.format_exc()
         }

@@ -7,14 +7,18 @@ import tempfile
 from datetime import datetime
 import mimetypes
 import c2pa
+import pathlib
+import uuid
 
 # For perceptual hashing (primarily for images)
 try:
     import imagehash
-    from PIL import Image
+    from PIL import Image, ImageOps
     IMAGEHASH_AVAILABLE = True
 except ImportError:
     IMAGEHASH_AVAILABLE = False
+    Image = None
+    ImageOps = None
 
 # For fuzzy hashing using TLSH (Trend Micro Locality Sensitive Hash)
 try:
@@ -30,7 +34,6 @@ except (ImportError, RuntimeError, Exception) as e:
 # Import Magika for advanced file type detection
 try:
     from magika import Magika, ContentTypeLabel
-    import pathlib
     MAGIKA_AVAILABLE = True
     try:
         # Initialize Magika with default model
@@ -62,6 +65,113 @@ except ImportError:
     get_enrichment_function = lambda mime_type: None
     supports_text_extraction = lambda mime_type: False
     get_text_extraction_function = lambda: None
+
+# Thumbnail constants
+THUMBNAIL_DIR = "uploads/thumbnails"
+THUMBNAIL_SIZE = (150, 150) # Width, Height
+THUMBNAIL_FORMAT = "JPEG"
+os.makedirs(THUMBNAIL_DIR, exist_ok=True)
+
+def _is_ffmpeg_available() -> bool:
+    """Check if ffmpeg command is available."""
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+FFMPEG_AVAILABLE = _is_ffmpeg_available()
+print(f"FFmpeg available: {FFMPEG_AVAILABLE}")
+
+def generate_thumbnail(file_path: str, unique_id: str, mime_type: str) -> Optional[Dict[str, Any]]:
+    """
+    Generate a thumbnail for image or video files.
+
+    Args:
+        file_path: Path to the original file.
+        unique_id: Unique ID associated with the file.
+        mime_type: The MIME type of the file.
+
+    Returns:
+        Dict containing thumbnail info (path, dimensions) or None if unsupported/error.
+    """
+    thumbnail_filename = f"{unique_id}_thumb.jpg"
+    thumbnail_path = os.path.join(THUMBNAIL_DIR, thumbnail_filename)
+    thumbnail_rel_path = os.path.join("thumbnails", thumbnail_filename) # Relative path for storage
+
+    try:
+        # --- Image Thumbnail Generation ---
+        if mime_type.startswith("image/") and IMAGEHASH_AVAILABLE and Image and ImageOps:
+            try:
+                with Image.open(file_path) as img:
+                    # Ensure image is in RGB mode for JPEG saving
+                    if img.mode not in ('RGB', 'L'): # L is grayscale
+                        img = img.convert('RGB')
+
+                    # Create thumbnail maintaining aspect ratio
+                    img.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+
+                    # Optional: Create a square canvas and paste the thumbnail in the center
+                    # square_thumb = ImageOps.pad(img, THUMBNAIL_SIZE, color=(255, 255, 255)) # White background
+                    # square_thumb.save(thumbnail_path, THUMBNAIL_FORMAT)
+                    # thumb_w, thumb_h = square_thumb.size
+
+                    # Save the potentially non-square thumbnail directly
+                    img.save(thumbnail_path, THUMBNAIL_FORMAT)
+                    thumb_w, thumb_h = img.size
+
+                    return {
+                        "thumbnail_path": thumbnail_rel_path,
+                        "width": thumb_w,
+                        "height": thumb_h,
+                        "format": THUMBNAIL_FORMAT
+                    }
+            except Exception as img_err:
+                print(f"Error generating image thumbnail for {file_path}: {img_err}")
+                return None # Fall through or return error?
+
+        # --- Video Thumbnail Generation ---
+        elif mime_type.startswith("video/") and FFMPEG_AVAILABLE:
+            try:
+                # Extract frame at 1 second, scale to fit width 150, maintain aspect ratio
+                cmd = [
+                    "ffmpeg",
+                    "-i", file_path,      # Input file
+                    "-ss", "00:00:01.000", # Seek to 1 second
+                    "-vframes", "1",      # Extract one frame
+                    "-vf", f"scale={THUMBNAIL_SIZE[0]}:-1", # Scale width to 150px, auto height
+                    "-q:v", "3",          # Quality (2-5 is good)
+                    thumbnail_path        # Output path
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+                # Check if thumbnail was created
+                if os.path.exists(thumbnail_path):
+                     # We don't easily know the dimensions without reading the thumb back
+                    return {
+                        "thumbnail_path": thumbnail_rel_path,
+                        "width": None, # Could read image back, but maybe not worth it
+                        "height": None,
+                        "format": THUMBNAIL_FORMAT
+                    }
+                else:
+                     print(f"FFmpeg ran but thumbnail not found for {file_path}.")
+                     print(f"FFmpeg stderr: {result.stderr}")
+                     return None
+            except subprocess.CalledProcessError as vid_err:
+                print(f"Error generating video thumbnail for {file_path}: {vid_err.stderr}")
+                return None
+            except Exception as vid_err_generic:
+                print(f"Generic error generating video thumbnail for {file_path}: {vid_err_generic}")
+                return None
+
+        # --- Unsupported Type ---
+        else:
+            return None # Not an image or video, or dependencies missing
+
+    except Exception as e:
+        print(f"Failed to generate thumbnail for {file_path}: {e}")
+        return None
 
 def calculate_file_hashes(file_path: str) -> Dict[str, str]:
     """
@@ -267,64 +377,118 @@ def get_basic_file_info(file_path: str, original_filename: Optional[str] = None)
     
     return file_info
 
-def extract_basic_metadata(file_path: str, original_filename: Optional[str] = None) -> Dict[str, Any]:
+def extract_basic_metadata(file_path: str, original_filename: Optional[str] = None, unique_id: Optional[str] = None,
+                           # Add parameters for status updates
+                           task_id: Optional[str] = None, 
+                           update_status_func: Optional[callable] = None) -> Dict[str, Any]:
     """
-    Extract basic metadata from a file including hashes and EXIF data.
-    
+    Extract basic metadata from a file including hashes, EXIF data, enrichment, and thumbnail.
+    Optionally updates task status during processing.
+
     Args:
         file_path: Path to the file
         original_filename: Original filename if different from file_path
-        
+        unique_id: The unique identifier assigned to this file storage.
+        task_id: The Celery task ID for status updates.
+        update_status_func: The function to call for updating status (e.g., task_queue.update_task_status).
+
     Returns:
         Dict containing all metadata
     """
-    # Get basic file info first (includes MIME type detection)
+    if unique_id is None:
+        print("Warning: unique_id not provided to extract_basic_metadata. Generating one.")
+        unique_id = str(uuid.uuid4())
+    
+    # Helper function to safely call the update status function
+    def _update_status(message: str):
+        if task_id and update_status_func and original_filename:
+            try:
+                update_status_func(task_id, "PROCESSING", message, filename=original_filename)
+            except Exception as e:
+                print(f"Error calling update_status_func from basic_metadata: {e}")
+
+    # --- Step: Basic File Info & Hashes ---
+    _update_status("Getting file info and calculating hashes...")
     file_info = get_basic_file_info(file_path, original_filename)
-    
+    file_info["unique_id"] = unique_id
+    hashes = calculate_file_hashes(file_path)
+
     metadata = {
+        "id": unique_id,
         "file_info": file_info,
-        "hashes": calculate_file_hashes(file_path),
+        "hashes": hashes,
+        "upload_date": datetime.utcnow().isoformat(),
     }
+
+    # --- Step: Perceptual Hashes (Images) ---
+    if file_info.get("mime_type", "").startswith("image/"):
+        _update_status("Calculating perceptual hashes...")
+        perceptual_hash = calculate_perceptual_hash(file_path)
+        if perceptual_hash:
+            metadata["perceptual_hashes"] = perceptual_hash
     
-    # Add perceptual hash for images
-    perceptual_hash = calculate_perceptual_hash(file_path)
-    if perceptual_hash:
-        metadata["perceptual_hashes"] = perceptual_hash
-    
-    # Add EXIF data if available
+    # --- Step: EXIF Data ---
+    _update_status("Extracting EXIF data...")
     exif_data = extract_exif_data(file_path)
     if exif_data:
         metadata["exif"] = exif_data
-    
-    # Apply file type specific enrichment if available
+
+    # --- Step: Thumbnail Generation ---
+    mime_type_for_thumb = file_info.get("mime_type", "")
+    if mime_type_for_thumb.startswith("image/") or mime_type_for_thumb.startswith("video/"):
+         _update_status("Generating thumbnail...")
+         thumbnail_info = generate_thumbnail(file_path, unique_id, mime_type_for_thumb)
+         if thumbnail_info:
+             metadata["thumbnail_info"] = thumbnail_info
+
+    # --- Step: Enrichment (Potentially long - e.g., Vision LLM) ---
     if ENRICHMENT_AVAILABLE:
         mime_type = file_info.get("mime_type", "")
         enrichment_func = get_enrichment_function(mime_type)
         
         if enrichment_func:
+            _update_status(f"Performing file enrichment ({mime_type})...") # Specify type
             try:
-                enrichment_data = enrichment_func(file_path)
+                # Pass status update args down to the enrichment function
+                enrichment_data = enrichment_func(
+                    file_path, 
+                    task_id=task_id, 
+                    original_filename=original_filename, 
+                    update_status_func=update_status_func
+                )
                 if enrichment_data:
-                    # Add the enrichment data under its own key
                     metadata["enrichment"] = enrichment_data
+                _update_status("File enrichment complete.") # Confirmation
             except Exception as e:
                 metadata["enrichment"] = {"error": str(e)}
+                _update_status("File enrichment failed.")
         
-        # Apply text extraction if supported for this file type
+        # --- Step: Text Extraction (Potentially long - e.g., OCR, Transcription) ---
         if supports_text_extraction(mime_type, file_path):
             text_extraction_func = get_text_extraction_function()
             if text_extraction_func:
-                try:
-                    print(f"Attempting text extraction for file: {file_path} with mime type: {mime_type}")
-                    # Pass the mime_type to the text extraction function
-                    # LLM summarization is now always attempted in the extraction functions if text is substantial
-                    text_data = text_extraction_func(file_path, mime_type=mime_type)
-                    print(f"Text extraction result: {text_data.keys() if text_data else None}")
-                    
-                    # Always include text extraction results, even if there was an error
-                    # (this helps debug what's happening)
-                    metadata["text_extraction"] = text_data
-                except Exception as e:
+                 _update_status(f"Performing text extraction ({mime_type})...") # Specify type
+                 try:
+                    # Pass status update args down to the text extraction function
+                    text_data = text_extraction_func(
+                        file_path, 
+                        mime_type=mime_type, 
+                        task_id=task_id, 
+                        original_filename=original_filename, 
+                        update_status_func=update_status_func
+                    )
+                    metadata["text_extraction"] = text_data # Store even if error occurred
+                    if "error" in text_data:
+                        _update_status("Text extraction failed.")
+                    elif text_data.get("llm_summary"): # Check if summary was generated
+                        _update_status("Text extraction and summarization complete.")
+                    elif text_data.get("extracted_text"): # Check if text was extracted
+                        _update_status("Text extraction complete (no summary generated).")
+                    else:
+                        _update_status("Text extraction complete (no text found).")
+                 except Exception as e:
                     metadata["text_extraction"] = {"error": str(e)}
+                    _update_status("Text extraction failed.")
     
+    _update_status("Metadata extraction steps finished.") # Final internal step message
     return metadata

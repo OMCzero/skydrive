@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Body, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Body, Form, Request
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,11 +10,13 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
 import json
+import mimetypes # Import mimetypes
 
 # Import our modules
-from basic_metadata import extract_basic_metadata
+from basic_metadata import extract_basic_metadata, THUMBNAIL_DIR # Import THUMBNAIL_DIR
 from system_check import get_system_status
 from search_service import search_service
+from celery.result import AsyncResult
 
 # Define uploads directory
 UPLOADS_DIR = "uploads"
@@ -36,6 +38,10 @@ app.add_middleware(
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# Mount thumbnail directory - SECURE THIS IN PRODUCTION
+os.makedirs(THUMBNAIL_DIR, exist_ok=True)
+app.mount("/thumbnails", StaticFiles(directory=THUMBNAIL_DIR), name="thumbnails")
+
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
     """Serve the index.html page"""
@@ -43,43 +49,20 @@ async def get_index():
         return f.read()
 
 @app.get("/status")
-async def check_status():
-    """
-    Get system status for all components.
-    
-    This endpoint checks the availability of:
-    - TLSH fuzzy hashing
-    - Magika file type detection
-    - Whisper transcription
-    - Ollama LLM
-    - ExifTool metadata extraction
-    - Redis (task queue backend)
-    - Celery (task queue workers)
-    - Meilisearch (search engine)
-    """
+async def get_status():
+    """Get the status of system components."""
     status = get_system_status()
-    
-    # Add Meilisearch status
-    search_stats = search_service.get_stats()
-    status["meilisearch"] = {
-        "status": "available" if search_stats.get("available", False) else "unavailable",
-        "message": f"Meilisearch is available with {search_stats.get('documents_count', 0)} documents" 
-                  if search_stats.get("available", False) 
-                  else "Meilisearch is not available"
-    }
-    
-    # Check queue system and update total count of components
-    queue_components = ["redis", "celery"]
-    for component in queue_components:
-        if component in status:
-            if status[component]["status"] == "available":
-                status["available_count"] += 1
-            status["total_components"] += 1
-    
     return JSONResponse(content=status)
 
-@app.post("/upload")
-async def upload_file(
+@app.get("/user-info")
+async def get_user_info(request: Request):
+    """Get the Tailscale user login from the header."""
+    user_login = request.headers.get("tailscale-user-login", "Unknown User")
+    return JSONResponse(content={"user_login": user_login})
+
+@app.post("/upload", status_code=202) # Changed default status to 202 Accepted
+async def upload_and_process_file(
+    request: Request,
     file: UploadFile = File(...),
     tags: Optional[str] = Form(None, description="Comma-separated tags as a JSON string array"),
     allow_duplicates: bool = Query(False, description="Allow duplicate file uploads")
@@ -104,6 +87,9 @@ async def upload_file(
     
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded")
+    
+    # Get user login from header
+    user_login = request.headers.get("tailscale-user-login", "Unknown User")
     
     # Parse tags if provided
     tags_list = []
@@ -165,7 +151,8 @@ async def upload_file(
     task = process_file.delay(
         temp_file_path=temp_file_path,
         original_filename=file.filename or "unknown",
-        tags=tags_list
+        tags=tags_list,
+        user_login=user_login
     )
     
     # Return task ID so client can check status
@@ -197,6 +184,8 @@ async def search_files(
     # Hash-based filters for duplicate detection
     hash_md5: Optional[str] = Query(None, description="Filter by MD5 hash"),
     hash_sha256: Optional[str] = Query(None, description="Filter by SHA256 hash"),
+    # User filter
+    user_login: Optional[str] = Query(None, description="Filter by user login who uploaded the file"),
     # Pagination and limits
     limit: int = Query(20, description="Maximum number of results to return")
 ):
@@ -249,6 +238,10 @@ async def search_files(
         filters["text_extraction.metadata.encoding"] = text_extraction_metadata_encoding
     if text_extraction_metadata_format:
         filters["text_extraction.metadata.format"] = text_extraction_metadata_format
+    
+    # Add user login filter
+    if user_login:
+        filters["user_login"] = user_login
     
     # Execute search
     results = search_service.search(q, filters, limit)
@@ -528,6 +521,30 @@ async def suggest_tags_endpoint(q: str = Query(..., description="Tag prefix quer
         
     suggestions = search_service.suggest_tags(q)
     return JSONResponse(content={"suggestions": suggestions})
+
+# --- DEPRECATED Thumbnail Endpoint --- 
+# This endpoint is replaced by mounting the /thumbnails directory directly.
+# @app.get("/thumbnail/{unique_id}")
+# async def get_thumbnail(unique_id: str):
+#     """
+#     Serve the thumbnail image for a given unique ID.
+#     Assumes thumbnail is always JPEG.
+#     """
+#     thumbnail_filename = f"{unique_id}_thumb.jpg"
+#     thumbnail_path = os.path.join(THUMBNAIL_DIR, thumbnail_filename)
+# 
+#     if not os.path.exists(thumbnail_path):
+#         # Optionally, return a placeholder image or a 404
+#         # For now, raise 404
+#         raise HTTPException(status_code=404, detail="Thumbnail not found")
+# 
+#     # Guess MIME type for the thumbnail (should be image/jpeg)
+#     mime_type, _ = mimetypes.guess_type(thumbnail_path)
+#     if not mime_type:
+#         mime_type = "image/jpeg" # Default if guess fails
+# 
+#     return FileResponse(thumbnail_path, media_type=mime_type)
+# --- End DEPRECATED Thumbnail Endpoint ---
 
 if __name__ == "__main__":
     import uvicorn

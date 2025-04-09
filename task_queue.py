@@ -72,7 +72,9 @@ def ping():
     return "pong"
 
 @celery_app.task(bind=True)
-def process_file(self, temp_file_path: str, original_filename: str, tags: Optional[List[str]] = None) -> Dict[str, Any]:
+def process_file(self, temp_file_path: str, original_filename: str, 
+                 tags: Optional[List[str]] = None, 
+                 user_login: Optional[str] = None) -> Dict[str, Any]:
     """
     Process a file asynchronously.
     
@@ -80,36 +82,50 @@ def process_file(self, temp_file_path: str, original_filename: str, tags: Option
         temp_file_path: Path to the temporary file
         original_filename: Original filename of the uploaded file
         tags: Optional list of user-provided tags
+        user_login: Optional user login identifier from Tailscale
         
     Returns:
         Dict containing the file metadata
     """
     task_id = self.request.id
-    # Use provided tags or default to empty list
     tags_list = tags if tags is not None else []
     
+    # Initial status update
     update_task_status(
         task_id=task_id, 
         status="PROCESSING", 
-        message=f"Processing file: {original_filename}",
+        message=f"Starting processing for: {original_filename}",
         filename=original_filename
     )
     
     try:
-        # Process the file using our basic metadata module
+        unique_id = str(uuid.uuid4())
+        
+        # --- Step: Metadata Extraction (includes enrichment, thumbnail, text) ---
+        # This function now handles its own internal status updates
         metadata = extract_basic_metadata(
             file_path=temp_file_path,
-            original_filename=original_filename
+            original_filename=original_filename,
+            unique_id=unique_id,
+            task_id=task_id, # Pass task ID
+            update_status_func=update_task_status # Pass the update function
         )
         
+        # --- Status Update: Storing File ---
+        # Keep this update after metadata extraction is fully complete
+        update_task_status(task_id, "PROCESSING", "Storing file and metadata...", filename=original_filename)
+
         # Add user-provided tags to the metadata
         metadata["tags"] = tags_list
+        
+        # Add user login to metadata if provided
+        if user_login:
+            metadata["user_login"] = user_login
         
         # Get file extension from original filename
         ext = os.path.splitext(original_filename)[1]
         
-        # Generate a unique filename using UUID to avoid collisions
-        unique_id = str(uuid.uuid4())
+        # Use the pre-generated unique_id for the filename
         safe_filename = f"{unique_id}{ext}"
         stored_path = os.path.join(UPLOADS_DIR, safe_filename)
         
@@ -120,30 +136,38 @@ def process_file(self, temp_file_path: str, original_filename: str, tags: Option
         if "file_info" not in metadata:
             metadata["file_info"] = {}
         metadata["file_info"]["stored_path"] = stored_path
-        metadata["file_info"]["unique_id"] = unique_id
+        # unique_id is already in file_info from extract_basic_metadata
 
-        # Save metadata to a JSON file
+        # Save metadata to a JSON file (optional step, perhaps remove later)
         metadata_file_path = os.path.join(UPLOADS_DIR, f"{unique_id}.json")
         with open(metadata_file_path, "w") as f:
             json.dump(metadata, f)
         
-        # Add to search index if available
+        # --- Step: Indexing ---
         search_id = None
         if search_service.available:
+            # metadata already contains id, file_info, hashes, tags, user_login, exif, thumbnail_info, enrichment, etc.
+            # The 'id' field in metadata should match unique_id and be used by Meilisearch
+            update_task_status(task_id, "PROCESSING", "Indexing file in search engine...", filename=original_filename)
             search_id = search_service.add_document(metadata)
             if search_id:
-                metadata["search_id"] = search_id
+                metadata["search_id"] = search_id # Keep search_id for reference, though id should be the main key
                 metadata["searchable"] = True
-                
-        # Update task status to success
-        update_task_status(task_id, "SUCCESS", "File processed successfully", metadata=metadata)
+        
+        # --- Step: Complete ---
+        # Use original_filename in the final success message
+        update_task_status(task_id, "SUCCESS", f"File '{original_filename}' processed successfully", metadata=metadata, filename=original_filename)
         return metadata
     
     except Exception as e:
         # Handle any errors during processing
-        error_msg = f"Error processing file: {str(e)}"
-        update_task_status(task_id, "ERROR", error_msg)
-        raise
+        error_msg = f"Error processing file '{original_filename}': {str(e)}"
+        update_task_status(task_id, "ERROR", error_msg, filename=original_filename)
+        # Log traceback for detailed debugging
+        import traceback
+        print(f"Task {task_id} failed for {original_filename}:")
+        traceback.print_exc()
+        raise # Re-raise the exception for Celery to mark as FAILURE
     
     finally:
         # Clean up the temporary file
@@ -166,18 +190,36 @@ def update_task_status(task_id: str, status: str, message: str, metadata: Option
         # Get the current time in ISO format
         now = datetime.utcnow().isoformat()
         
+        # Fetch existing data first to preserve created_at and filename if not provided now
+        existing_data_json = redis_client.get(f"{TASK_STATUS_PREFIX}{task_id}")
+        existing_data = {}
+        created_at = now # Default created_at
+        existing_filename = None # Default filename
+        
+        if existing_data_json:
+            try:
+                existing_data = json.loads(existing_data_json)
+                created_at = existing_data.get("created_at", now)
+                existing_filename = existing_data.get("filename")
+            except (json.JSONDecodeError, TypeError):
+                # If we can't decode the existing data, just use current time
+                pass
+        
+        # Use provided filename, fallback to existing, else None
+        current_filename = filename if filename is not None else existing_filename
+
         # Create task status data
         task_data = {
             "task_id": task_id,
             "status": status,
             "message": message,
             "updated_at": now,
-            "created_at": now,  # Will be overwritten if exists
+            "created_at": created_at,  # Preserve original creation time
         }
         
-        # Add filename if provided
-        if filename:
-            task_data["filename"] = filename
+        # Add filename if available
+        if current_filename:
+            task_data["filename"] = current_filename
             
         # Add metadata if provided (may be large, so we store it separately for completed tasks)
         if metadata:
@@ -186,16 +228,21 @@ def update_task_status(task_id: str, status: str, message: str, metadata: Option
             if status == "SUCCESS" and metadata.get("file_info"):
                 # Extract just the essential info for the task list view
                 file_info = metadata.get("file_info", {})
-                task_data["metadata"] = {
+                thumbnail_info = metadata.get("thumbnail_info") # Get thumbnail info if present
+                
+                summary_metadata = {
                     "file_info": {
-                        "filename": file_info.get("filename", "Unknown"),
+                        # Use current_filename if available, otherwise fallback to filename in file_info
+                        "filename": current_filename or file_info.get("filename", "Unknown"), 
                         "mime_type": file_info.get("mime_type", "Unknown"),
                         "size_bytes": file_info.get("size_bytes", 0),
-                        "extension": file_info.get("extension", "")
+                        "extension": file_info.get("extension", ""),
+                        "thumbnail_path": thumbnail_info.get("thumbnail_path") if thumbnail_info else None
                     },
                     "search_id": metadata.get("search_id"),
                     "searchable": metadata.get("searchable", False)
                 }
+                task_data["metadata"] = summary_metadata # Store summary in main task data
                 
                 # Store the full metadata in a separate key
                 full_metadata_key = f"{TASK_STATUS_PREFIX}{task_id}:metadata"
@@ -203,18 +250,16 @@ def update_task_status(task_id: str, status: str, message: str, metadata: Option
                 redis_client.expire(full_metadata_key, TASK_TTL)
             else:
                 # For other statuses or small metadata, include it directly
-                task_data["metadata"] = metadata
-        
-        # Check if this task already exists to preserve created_at
-        existing_data = redis_client.get(f"{TASK_STATUS_PREFIX}{task_id}")
-        if existing_data:
-            try:
-                existing_data = json.loads(existing_data)
-                if "created_at" in existing_data:
-                    task_data["created_at"] = existing_data["created_at"]
-            except (json.JSONDecodeError, TypeError):
-                # If we can't decode the existing data, just use current time
-                pass
+                # Ensure it's JSON serializable - converting potential complex objects might be needed here
+                try:
+                   # Attempt to serialize metadata directly
+                   json.dumps(metadata) 
+                   task_data["metadata"] = metadata
+                except TypeError:
+                   # Fallback if direct serialization fails (e.g., contains non-serializable objects)
+                   # Could convert to string or a simplified representation
+                   task_data["metadata"] = {"error": "Metadata not JSON serializable for direct storage"} 
+                   print(f"Warning: Metadata for task {task_id} (status {status}) is not directly JSON serializable.")
         
         # Store task status in Redis with TTL
         redis_client.set(
@@ -228,12 +273,12 @@ def update_task_status(task_id: str, status: str, message: str, metadata: Option
         score = time.time()
         redis_client.zadd(TASK_LIST_KEY, {task_id: score})
         
-        # Ensure the list itself has TTL to prevent infinite growth
-        redis_client.expire(TASK_LIST_KEY, TASK_TTL)
+        # Ensure the list itself has TTL to prevent infinite growth (might be redundant if items have TTL)
+        # redis_client.expire(TASK_LIST_KEY, TASK_TTL) # Consider if this is needed
         
     except Exception as e:
         # If Redis operations fail, log the error but don't crash the task
-        print(f"Error updating task status in Redis: {str(e)}")
+        print(f"Error updating task status in Redis for task {task_id}: {str(e)}")
 
 def get_task_status(task_id: str, include_full_metadata: bool = False) -> Optional[Dict[str, Any]]:
     """

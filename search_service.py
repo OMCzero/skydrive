@@ -182,7 +182,10 @@ class SearchService:
                 "perceptual_hashes.whash",
 
                 # User-provided tags
-                "tags"
+                "tags",
+
+                # User login information
+                "user_login"
             ])
             
             # Configure filterable attributes (for faceted search)
@@ -228,7 +231,10 @@ class SearchService:
                 "text_extraction.metadata.llm_summary_model",
                 
                 # User-provided tags
-                "tags"
+                "tags",
+
+                # User login information
+                "user_login"
             ])
             
             # Configure ranking rules

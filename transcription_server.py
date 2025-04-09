@@ -9,7 +9,7 @@ app = FastAPI()
 # Load the Whisper model
 model = whisper.load_model("turbo")  # or "medium", "small" based on your hardware
 
-@app.head("/")
+@app.head("/transcribe/")
 async def health_check():
     # Return a 200 status code for connectivity checks
     return Response(status_code=200)

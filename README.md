@@ -75,7 +75,7 @@ The easiest way to run the application is with Docker Compose:
    docker-compose down
    ```
 
-> **Development:** The quick command to re-run the app every time: `rm -rf meili_data/ uploads/ && docker compose down && docker system prune -f && docker compose down && docker compose up --build`
+> **Development:** The quick command to re-run the app every time: `rm -rf meili_data/ uploads/ && docker compose down && docker system prune -f && docker compose down && clear && docker compose up --build`
 
 ### Manual Installation
 

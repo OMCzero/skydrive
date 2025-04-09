@@ -159,6 +159,8 @@
             border-radius: 5px;
             margin-bottom: 10px;
             background-color: white;
+            display: flex;
+            gap: 15px;
         }
         .result-item:hover {
             border-color: #4CAF50;
@@ -338,6 +340,8 @@
             background-color: white;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             transition: all 0.3s ease;
+            display: flex;
+            gap: 15px;
         }
         .task-card:hover {
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
@@ -495,6 +499,20 @@
         .tag-suggestions li:hover {
             background-color: #f5f5f5;
         }
+        
+        /* Thumbnail styles */
+        .result-thumbnail {
+           width: 80px; /* Fixed width for thumbnail */
+           height: 80px; /* Fixed height for thumbnail */
+           object-fit: cover; /* Cover the area, cropping if needed */
+           border-radius: 4px;
+           background-color: #eee; /* Placeholder color */
+           flex-shrink: 0; /* Prevent thumbnail from shrinking */
+           margin-top: 5px; /* Align roughly with content */
+        }
+        .result-content {
+            flex: 1; /* Allow content to take remaining space */
+        }
     </style>
 </head>
 <body>
@@ -506,6 +524,10 @@
             <p>Loading system status...</p>
         </div>
         <div class="timestamp" id="statusTimestamp"></div>
+    </div>
+    
+    <div id="userInfo" style="margin-bottom: 20px; padding: 10px; background-color: #f0f0f0; border-radius: 5px;">
+        <p><strong>User:</strong> <span id="userLogin">Loading...</span></p>
     </div>
     
     <div class="tabs">
@@ -751,37 +773,26 @@
                 const response = await fetch(`/task/${taskId}`);
                 const taskData = await response.json();
                 
-                // Format task data for display
-                let formattedData = {
-                    task_id: taskData.task_id,
-                    status: taskData.status,
-                    message: taskData.message,
-                    updated_at: taskData.updated_at
-                };
+                // Ensure task_id is displayed properly
+                const displayTaskId = taskData.task_id || taskId || 'unknown';
+                const statusClass = taskData.status ? taskData.status.toLowerCase() : 'unknown';
                 
-                // If task has metadata (i.e., is complete), display it
-                if (taskData.metadata) {
-                    formattedData.metadata = taskData.metadata;
-                }
-                
-                // If task has an error, display it
-                if (taskData.error) {
-                    formattedData.error = taskData.error;
-                }
-                
-                // Ensure task_id is displayed properly (it should always be present)
-                // Use the original taskId parameter to avoid variable redeclaration
-                const displayTaskId = taskData.task_id || 'unknown';
+                // Determine if we should show a loader next to the message
+                const showLoader = taskData.status === 'PROCESSING';
                 
                 resultContainer.innerHTML = `
-                    <div class="task-status ${taskData.status.toLowerCase()}">
+                    <div class="task-status ${statusClass}">
                         <h3>Task: ${displayTaskId}</h3>
                         <p><strong>Status:</strong> ${taskData.status}</p>
-                        <p><strong>Message:</strong> ${taskData.message}</p>
+                        <p>
+                            <strong>Progress:</strong> 
+                            ${taskData.message} 
+                            ${showLoader ? '<div class="loader" style="display: inline-block; width: 12px; height: 12px; border-width: 2px; margin-left: 5px; vertical-align: middle;"></div>' : ''}
+                        </p>
                         <p><strong>Last Updated:</strong> ${new Date(taskData.updated_at).toLocaleString()}</p>
                     </div>
                     
-                    ${taskData.status === 'SUCCESS' ? 
+                    ${taskData.status === 'SUCCESS' && taskData.metadata ? 
                         `<div class="result-data">
                             <h3>Processing Results:</h3>
                             <pre>${JSON.stringify(taskData.metadata, null, 2)}</pre>
@@ -799,12 +810,19 @@
                 `;
                 
                 // If the task is not in a final state, continue checking
-                // Use the original taskId parameter for the recursive call
                 if (['PENDING', 'PROCESSING'].includes(taskData.status)) {
                     setTimeout(() => checkTaskStatus(taskId, resultContainer), 2000);
                 } else {
-                    // Task is complete, refresh system status
+                    // Task is complete, refresh system status and potentially the tasks list if visible
                     setTimeout(fetchSystemStatus, 1000);
+                    // Optionally refresh tasks list if the tasks tab is active
+                    const tasksTab = document.querySelector('.tab[data-tab="tasks"]');
+                    if (tasksTab && tasksTab.classList.contains('active')) {
+                         // Use current filters and page from state
+                        const statusFilter = document.getElementById('taskStatusFilter').value;
+                        const includeMetadata = document.getElementById('includeMetadata').checked;
+                        loadTasks(statusFilter, false, taskPageState.currentPage, includeMetadata);
+                    }
                 }
                 
             } catch (error) {
@@ -1110,6 +1128,10 @@
             if (textEncoding) params.append('text_extraction.metadata.encoding', textEncoding);
             if (textFormat) params.append('text_extraction.metadata.format', textFormat);
             
+            // TODO: Add user_login filter if needed from UI element
+            // const userLoginFilter = document.getElementById('userLoginFilter').value;
+            // if (userLoginFilter) params.append('user_login', userLoginFilter);
+            
             try {
                 const response = await fetch(`/search?${params.toString()}`);
                 const data = await response.json();
@@ -1135,6 +1157,9 @@
                         const extension = fileInfo.extension || '';
                         const size = fileInfo.size_bytes ? formatFileSize(fileInfo.size_bytes) : 'Unknown size';
                         const tags = hit.tags || []; // Get the tags array
+                        const userLogin = hit.user_login || 'Unknown'; // Get the user login
+                        const thumbnailInfo = hit.thumbnail_info;
+                        const thumbnailUrl = thumbnailInfo ? `/thumbnails/${thumbnailInfo.thumbnail_path.split('/').pop()}` : null;
                         
                         // Get summary text
                         let summary = '';
@@ -1173,41 +1198,48 @@
                         // Build result HTML
                         resultsHtml += `
                             <div class="result-item">
-                                <div class="result-header">
-                                    <h3 class="result-title">${filename}</h3>
-                                    <span class="result-type">${readableType}</span>
-                                </div>
-                                
-                                <div class="result-actions">
-                                    <button onclick="downloadFile('${hit.id}')" class="download-button">
-                                        <span class="download-icon">⬇️</span> Download
-                                    </button>
-                                </div>
-                                
-                                ${summary ? `<div class="result-summary">${summary}</div>` : ''}
-                                ${imageDescription ? `<div class="result-summary"><strong>Image content:</strong> ${imageDescription}</div>` : ''}
-                                
-                                <div class="result-metadata">
-                                    <div class="metadata-group">
-                                        <span class="metadata-item"><strong>Size:</strong> ${size}</span>
-                                        <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
-                                        <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
+                                ${thumbnailUrl ? 
+                                    `<img src="${thumbnailUrl}" alt="Thumbnail for ${filename}" class="result-thumbnail" loading="lazy">` : 
+                                    `<div class="result-thumbnail"></div>` /* Placeholder */
+                                }
+                                <div class="result-content">
+                                    <div class="result-header">
+                                        <h3 class="result-title">${filename}</h3>
+                                        <span class="result-type">${readableType}</span>
                                     </div>
                                     
-                                    ${tags.length > 0 ? `
-                                    <div class="metadata-group">
-                                        <span class="metadata-item" style="margin-right: 5px;"><strong>Tags:</strong></span>
-                                        ${tags.map(tag => `<span style="background-color: #eee; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-right: 5px; display: inline-block;">${tag}</span>`).join('')}
+                                    <div class="result-actions">
+                                        <button onclick="downloadFile('${hit.id}')" class="download-button">
+                                            <span class="download-icon">⬇️</span> Download
+                                        </button>
                                     </div>
-                                    ` : ''}
                                     
-                                    ${dimensions ? `
-                                    <div class="metadata-group">
-                                        <span class="metadata-item"><strong>Dimensions:</strong> ${dimensions}</span>
-                                        ${cameraInfo ? `<span class="metadata-item"><strong>Camera:</strong> ${cameraInfo}</span>` : ''}
+                                    ${summary ? `<div class="result-summary">${summary}</div>` : ''}
+                                    ${imageDescription ? `<div class="result-summary"><strong>Image content:</strong> ${imageDescription}</div>` : ''}
+                                    
+                                    <div class="result-metadata">
+                                        <div class="metadata-group">
+                                            <span class="metadata-item"><strong>Size:</strong> ${size}</span>
+                                            <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
+                                            <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
+                                            <span class="metadata-item"><strong>By:</strong> ${userLogin}</span>
+                                        </div>
+                                        
+                                        ${tags.length > 0 ? `
+                                        <div class="metadata-group">
+                                            <span class="metadata-item" style="margin-right: 5px;"><strong>Tags:</strong></span>
+                                            ${tags.map(tag => `<span style="background-color: #eee; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-right: 5px; display: inline-block;">${tag}</span>`).join('')}
+                                        </div>
+                                        ` : ''}
+                                        
+                                        ${dimensions ? `
+                                        <div class="metadata-group">
+                                            <span class="metadata-item"><strong>Dimensions:</strong> ${dimensions}</span>
+                                            ${cameraInfo ? `<span class="metadata-item"><strong>Camera:</strong> ${cameraInfo}</span>` : ''}
+                                        </div>
+                                        ` : ''}
                                     </div>
-                                    ` : ''}
-                                </div>
+                                </div> 
                             </div>
                         `;
                     }
@@ -1268,24 +1300,64 @@
         }
         
         // Search input listeners
-        document.getElementById('searchButton').addEventListener('click', performSearch);
-        document.getElementById('searchInput').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
+        // Remove explicit button click listener and Enter keypress listener
+        // document.getElementById('searchButton').addEventListener('click', performSearch);
+        // document.getElementById('searchInput').addEventListener('keypress', function(e) {
+        //     if (e.key === 'Enter') {
+        //         performSearch();
+        //     }
+        // });
+        
+        // Add debounced input listener for search-as-you-type
+        let searchDebounceTimeout;
+        document.getElementById('searchInput').addEventListener('input', function() {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(() => {
                 performSearch();
-            }
+            }, 300); // Debounce time in ms (e.g., 300ms)
+        });
+
+        // Keep explicit button click as well
+        document.getElementById('searchButton').addEventListener('click', () => {
+            clearTimeout(searchDebounceTimeout); // Cancel any pending debounced search
+            performSearch(); // Trigger search immediately
         });
         
-        // Basic filter change listeners
-        document.getElementById('mimeTypeFilter').addEventListener('change', performSearch);
-        document.getElementById('extensionFilter').addEventListener('change', performSearch);
-        document.getElementById('sizeFilter').addEventListener('change', performSearch);
+        // Basic filter change listeners (these will now trigger debounced searches)
+        document.getElementById('mimeTypeFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('extensionFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('sizeFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
         
-        // Advanced filter change listeners
-        document.getElementById('cameraMakeFilter').addEventListener('change', performSearch);
-        document.getElementById('colorModeFilter').addEventListener('change', performSearch);
-        document.getElementById('isAnimatedFilter').addEventListener('change', performSearch);
-        document.getElementById('textEncodingFilter').addEventListener('change', performSearch);
-        document.getElementById('textFormatFilter').addEventListener('change', performSearch);
+        // Advanced filter change listeners (these will also trigger debounced searches)
+        document.getElementById('cameraMakeFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('colorModeFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('isAnimatedFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('textEncodingFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
+        document.getElementById('textFormatFilter').addEventListener('change', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(performSearch, 300);
+        });
         
         // Global state for task pagination
         const taskPageState = {
@@ -1520,6 +1592,9 @@
                         const extension = fileInfo.extension || '';
                         const size = fileInfo.size_bytes ? formatFileSize(fileInfo.size_bytes) : 'Unknown size';
                         const tags = hit.tags || []; // Get tags for duplicate view
+                        const userLogin = hit.user_login || 'Unknown'; // Get user login for duplicate view
+                        const thumbnailInfo = hit.thumbnail_info;
+                        const thumbnailUrl = thumbnailInfo ? `/thumbnails/${thumbnailInfo.thumbnail_path.split('/').pop()}` : null;
                         
                         // Get summary text
                         let summary = '';
@@ -1553,6 +1628,7 @@
                                         <span class="metadata-item"><strong>Size:</strong> ${size}</span>
                                         <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
                                         <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
+                                        <span class="metadata-item"><strong>By:</strong> ${userLogin}</span>
                                     </div>
                                    
                                    ${tags.length > 0 ? `
@@ -1642,10 +1718,26 @@
 
         // Fetch status and tasks when page loads
         document.addEventListener('DOMContentLoaded', function() {
+            // Fetch user info first - it should be fast
+            fetchUserInfo();
+            // Then fetch system status
             fetchSystemStatus();
             // Initially load tasks with refresh=true to get all tasks from Celery
             loadTasks('', true, 1, false);
         });
+
+        // Function to fetch and display user info
+        async function fetchUserInfo() {
+            const userLoginSpan = document.getElementById('userLogin');
+            try {
+                const response = await fetch('/user-info');
+                const data = await response.json();
+                userLoginSpan.textContent = data.user_login || 'Unknown User';
+            } catch (error) {
+                console.error('Error fetching user info:', error);
+                userLoginSpan.textContent = 'Error loading user';
+            }
+        }
     </script>
 </body>
 </html>
