@@ -159,6 +159,8 @@
             border-radius: 5px;
             margin-bottom: 10px;
             background-color: white;
+            display: flex;
+            gap: 15px;
         }
         .result-item:hover {
             border-color: #4CAF50;
@@ -338,6 +340,8 @@
             background-color: white;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             transition: all 0.3s ease;
+            display: flex;
+            gap: 15px;
         }
         .task-card:hover {
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
@@ -494,6 +498,20 @@
         }
         .tag-suggestions li:hover {
             background-color: #f5f5f5;
+        }
+        
+        /* Thumbnail styles */
+        .result-thumbnail {
+           width: 80px; /* Fixed width for thumbnail */
+           height: 80px; /* Fixed height for thumbnail */
+           object-fit: cover; /* Cover the area, cropping if needed */
+           border-radius: 4px;
+           background-color: #eee; /* Placeholder color */
+           flex-shrink: 0; /* Prevent thumbnail from shrinking */
+           margin-top: 5px; /* Align roughly with content */
+        }
+        .result-content {
+            flex: 1; /* Allow content to take remaining space */
         }
     </style>
 </head>
@@ -1144,6 +1162,8 @@
                         const size = fileInfo.size_bytes ? formatFileSize(fileInfo.size_bytes) : 'Unknown size';
                         const tags = hit.tags || []; // Get the tags array
                         const userLogin = hit.user_login || 'Unknown'; // Get the user login
+                        const thumbnailInfo = hit.thumbnail_info;
+                        const thumbnailUrl = thumbnailInfo ? `/thumbnails/${thumbnailInfo.thumbnail_path.split('/').pop()}` : null;
                         
                         // Get summary text
                         let summary = '';
@@ -1182,42 +1202,48 @@
                         // Build result HTML
                         resultsHtml += `
                             <div class="result-item">
-                                <div class="result-header">
-                                    <h3 class="result-title">${filename}</h3>
-                                    <span class="result-type">${readableType}</span>
-                                </div>
-                                
-                                <div class="result-actions">
-                                    <button onclick="downloadFile('${hit.id}')" class="download-button">
-                                        <span class="download-icon">⬇️</span> Download
-                                    </button>
-                                </div>
-                                
-                                ${summary ? `<div class="result-summary">${summary}</div>` : ''}
-                                ${imageDescription ? `<div class="result-summary"><strong>Image content:</strong> ${imageDescription}</div>` : ''}
-                                
-                                <div class="result-metadata">
-                                    <div class="metadata-group">
-                                        <span class="metadata-item"><strong>Size:</strong> ${size}</span>
-                                        <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
-                                        <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
-                                        <span class="metadata-item"><strong>By:</strong> ${userLogin}</span>
+                                ${thumbnailUrl ? 
+                                    `<img src="${thumbnailUrl}" alt="Thumbnail for ${filename}" class="result-thumbnail" loading="lazy">` : 
+                                    `<div class="result-thumbnail"></div>` /* Placeholder */
+                                }
+                                <div class="result-content">
+                                    <div class="result-header">
+                                        <h3 class="result-title">${filename}</h3>
+                                        <span class="result-type">${readableType}</span>
                                     </div>
                                     
-                                    ${tags.length > 0 ? `
-                                    <div class="metadata-group">
-                                        <span class="metadata-item" style="margin-right: 5px;"><strong>Tags:</strong></span>
-                                        ${tags.map(tag => `<span style="background-color: #eee; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-right: 5px; display: inline-block;">${tag}</span>`).join('')}
+                                    <div class="result-actions">
+                                        <button onclick="downloadFile('${hit.id}')" class="download-button">
+                                            <span class="download-icon">⬇️</span> Download
+                                        </button>
                                     </div>
-                                    ` : ''}
                                     
-                                    ${dimensions ? `
-                                    <div class="metadata-group">
-                                        <span class="metadata-item"><strong>Dimensions:</strong> ${dimensions}</span>
-                                        ${cameraInfo ? `<span class="metadata-item"><strong>Camera:</strong> ${cameraInfo}</span>` : ''}
+                                    ${summary ? `<div class="result-summary">${summary}</div>` : ''}
+                                    ${imageDescription ? `<div class="result-summary"><strong>Image content:</strong> ${imageDescription}</div>` : ''}
+                                    
+                                    <div class="result-metadata">
+                                        <div class="metadata-group">
+                                            <span class="metadata-item"><strong>Size:</strong> ${size}</span>
+                                            <span class="metadata-item"><strong>Type:</strong> ${readableType}${extension}</span>
+                                            <span class="metadata-item"><strong>Uploaded:</strong> ${uploadDate}</span>
+                                            <span class="metadata-item"><strong>By:</strong> ${userLogin}</span>
+                                        </div>
+                                        
+                                        ${tags.length > 0 ? `
+                                        <div class="metadata-group">
+                                            <span class="metadata-item" style="margin-right: 5px;"><strong>Tags:</strong></span>
+                                            ${tags.map(tag => `<span style="background-color: #eee; padding: 2px 6px; border-radius: 10px; font-size: 11px; margin-right: 5px; display: inline-block;">${tag}</span>`).join('')}
+                                        </div>
+                                        ` : ''}
+                                        
+                                        ${dimensions ? `
+                                        <div class="metadata-group">
+                                            <span class="metadata-item"><strong>Dimensions:</strong> ${dimensions}</span>
+                                            ${cameraInfo ? `<span class="metadata-item"><strong>Camera:</strong> ${cameraInfo}</span>` : ''}
+                                        </div>
+                                        ` : ''}
                                     </div>
-                                    ` : ''}
-                                </div>
+                                </div> 
                             </div>
                         `;
                     }
@@ -1571,6 +1597,8 @@
                         const size = fileInfo.size_bytes ? formatFileSize(fileInfo.size_bytes) : 'Unknown size';
                         const tags = hit.tags || []; // Get tags for duplicate view
                         const userLogin = hit.user_login || 'Unknown'; // Get user login for duplicate view
+                        const thumbnailInfo = hit.thumbnail_info;
+                        const thumbnailUrl = thumbnailInfo ? `/thumbnails/${thumbnailInfo.thumbnail_path.split('/').pop()}` : null;
                         
                         // Get summary text
                         let summary = '';

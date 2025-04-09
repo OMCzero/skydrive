@@ -10,9 +10,10 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 from datetime import datetime
 import json
+import mimetypes # Import mimetypes
 
 # Import our modules
-from basic_metadata import extract_basic_metadata
+from basic_metadata import extract_basic_metadata, THUMBNAIL_DIR # Import THUMBNAIL_DIR
 from system_check import get_system_status
 from search_service import search_service
 from celery.result import AsyncResult
@@ -36,6 +37,10 @@ app.add_middleware(
 # Mount static files directory
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Mount thumbnail directory - SECURE THIS IN PRODUCTION
+os.makedirs(THUMBNAIL_DIR, exist_ok=True)
+app.mount("/thumbnails", StaticFiles(directory=THUMBNAIL_DIR), name="thumbnails")
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index():
@@ -516,6 +521,30 @@ async def suggest_tags_endpoint(q: str = Query(..., description="Tag prefix quer
         
     suggestions = search_service.suggest_tags(q)
     return JSONResponse(content={"suggestions": suggestions})
+
+# --- DEPRECATED Thumbnail Endpoint --- 
+# This endpoint is replaced by mounting the /thumbnails directory directly.
+# @app.get("/thumbnail/{unique_id}")
+# async def get_thumbnail(unique_id: str):
+#     """
+#     Serve the thumbnail image for a given unique ID.
+#     Assumes thumbnail is always JPEG.
+#     """
+#     thumbnail_filename = f"{unique_id}_thumb.jpg"
+#     thumbnail_path = os.path.join(THUMBNAIL_DIR, thumbnail_filename)
+# 
+#     if not os.path.exists(thumbnail_path):
+#         # Optionally, return a placeholder image or a 404
+#         # For now, raise 404
+#         raise HTTPException(status_code=404, detail="Thumbnail not found")
+# 
+#     # Guess MIME type for the thumbnail (should be image/jpeg)
+#     mime_type, _ = mimetypes.guess_type(thumbnail_path)
+#     if not mime_type:
+#         mime_type = "image/jpeg" # Default if guess fails
+# 
+#     return FileResponse(thumbnail_path, media_type=mime_type)
+# --- End DEPRECATED Thumbnail Endpoint ---
 
 if __name__ == "__main__":
     import uvicorn

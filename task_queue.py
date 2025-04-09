@@ -99,10 +99,14 @@ def process_file(self, temp_file_path: str, original_filename: str,
     )
     
     try:
-        # Process the file using our basic metadata module
+        # Generate a unique ID for the file and its metadata *before* processing
+        unique_id = str(uuid.uuid4())
+        
+        # Process the file using our basic metadata module, passing the unique_id
         metadata = extract_basic_metadata(
             file_path=temp_file_path,
-            original_filename=original_filename
+            original_filename=original_filename,
+            unique_id=unique_id # Pass the generated unique_id
         )
         
         # Add user-provided tags to the metadata
@@ -115,8 +119,7 @@ def process_file(self, temp_file_path: str, original_filename: str,
         # Get file extension from original filename
         ext = os.path.splitext(original_filename)[1]
         
-        # Generate a unique filename using UUID to avoid collisions
-        unique_id = str(uuid.uuid4())
+        # Use the pre-generated unique_id for the filename
         safe_filename = f"{unique_id}{ext}"
         stored_path = os.path.join(UPLOADS_DIR, safe_filename)
         
@@ -127,7 +130,7 @@ def process_file(self, temp_file_path: str, original_filename: str,
         if "file_info" not in metadata:
             metadata["file_info"] = {}
         metadata["file_info"]["stored_path"] = stored_path
-        metadata["file_info"]["unique_id"] = unique_id
+        # unique_id is already in file_info from extract_basic_metadata
 
         # Save metadata to a JSON file
         metadata_file_path = os.path.join(UPLOADS_DIR, f"{unique_id}.json")
@@ -137,9 +140,11 @@ def process_file(self, temp_file_path: str, original_filename: str,
         # Add to search index if available
         search_id = None
         if search_service.available:
+            # metadata already contains id, file_info, hashes, tags, user_login, exif, thumbnail_info, enrichment, etc.
+            # The 'id' field in metadata should match unique_id and be used by Meilisearch
             search_id = search_service.add_document(metadata)
             if search_id:
-                metadata["search_id"] = search_id
+                metadata["search_id"] = search_id # Keep search_id for reference, though id should be the main key
                 metadata["searchable"] = True
                 
         # Update task status to success
@@ -193,12 +198,15 @@ def update_task_status(task_id: str, status: str, message: str, metadata: Option
             if status == "SUCCESS" and metadata.get("file_info"):
                 # Extract just the essential info for the task list view
                 file_info = metadata.get("file_info", {})
+                thumbnail_info = metadata.get("thumbnail_info") # Get thumbnail info if present
+                
                 task_data["metadata"] = {
                     "file_info": {
                         "filename": file_info.get("filename", "Unknown"),
                         "mime_type": file_info.get("mime_type", "Unknown"),
                         "size_bytes": file_info.get("size_bytes", 0),
-                        "extension": file_info.get("extension", "")
+                        "extension": file_info.get("extension", ""),
+                        "thumbnail_path": thumbnail_info.get("thumbnail_path") if thumbnail_info else None
                     },
                     "search_id": metadata.get("search_id"),
                     "searchable": metadata.get("searchable", False)
