@@ -72,7 +72,9 @@ def ping():
     return "pong"
 
 @celery_app.task(bind=True)
-def process_file(self, temp_file_path: str, original_filename: str, tags: Optional[List[str]] = None) -> Dict[str, Any]:
+def process_file(self, temp_file_path: str, original_filename: str, 
+                 tags: Optional[List[str]] = None, 
+                 user_login: Optional[str] = None) -> Dict[str, Any]:
     """
     Process a file asynchronously.
     
@@ -80,6 +82,7 @@ def process_file(self, temp_file_path: str, original_filename: str, tags: Option
         temp_file_path: Path to the temporary file
         original_filename: Original filename of the uploaded file
         tags: Optional list of user-provided tags
+        user_login: Optional user login identifier from Tailscale
         
     Returns:
         Dict containing the file metadata
@@ -91,7 +94,7 @@ def process_file(self, temp_file_path: str, original_filename: str, tags: Option
     update_task_status(
         task_id=task_id, 
         status="PROCESSING", 
-        message=f"Processing file: {original_filename}",
+        message=f"Processing file: {original_filename} for user {user_login or 'Unknown'}",
         filename=original_filename
     )
     
@@ -104,6 +107,10 @@ def process_file(self, temp_file_path: str, original_filename: str, tags: Option
         
         # Add user-provided tags to the metadata
         metadata["tags"] = tags_list
+        
+        # Add user login to metadata if provided
+        if user_login:
+            metadata["user_login"] = user_login
         
         # Get file extension from original filename
         ext = os.path.splitext(original_filename)[1]
