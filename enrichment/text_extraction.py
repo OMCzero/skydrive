@@ -436,35 +436,80 @@ def transcribe_audio_video(file_path: str,
         with open(file_path, 'rb') as f:
             files = {'file': f}
             
-            # --- Call Transcription API (Potentially long) ---
-            _update_status("Transcribing audio/video...")
-            response = requests.post(TRANSCRIPTION_API_URL, files=files, timeout=3600) # Timeout 1 hour
-            _update_status("Transcription API response received.")
+            # --- Submit job to Transcription API ---
+            _update_status("Submitting audio/video to transcription API...")
+            response = requests.post(TRANSCRIPTION_API_URL, files=files)
             
         if response.status_code == 200:
-            result = response.json()
-            extracted_text = result.get('transcription', '')
+            job_data = response.json()
+            job_id = job_data.get('job_id')
             
-            transcription_result = {
-                "extracted_text": extracted_text.strip(),
-                "method": "external_transcription_api",
-                "text_length": len(extracted_text),
-                "word_count": len(extracted_text.split()) if extracted_text else 0,
-                "api_metadata": result.get('metadata') # Include any extra metadata from API
-            }
+            if not job_id:
+                error_msg = f"Transcription API did not return a job_id: {job_data}"
+                _update_status("Transcription failed: No job ID returned")
+                return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_failed"}
             
-            # Add LLM summary if available and text is substantial
-            if OLLAMA_AVAILABLE and len(extracted_text.strip()) > 100:
-                # Pass status update args down
-                summary_result = generate_text_summary(
-                    extracted_text, 
-                    task_id=task_id, 
-                    original_filename=original_filename, 
-                    update_status_func=update_status_func
-                )
-                transcription_result.update(summary_result)
+            # Poll for results
+            _update_status(f"Transcription job submitted (ID: {job_id}). Waiting for results...")
             
-            return transcription_result
+            import time
+            max_attempts = 60  # Wait up to 5 minutes (60 x 5 seconds)
+            for attempt in range(max_attempts):
+                time.sleep(5)  # Wait 5 seconds between polling attempts
+                
+                try:
+                    poll_url = f"{TRANSCRIPTION_API_URL}/{job_id}" if not TRANSCRIPTION_API_URL.endswith('/') else f"{TRANSCRIPTION_API_URL}{job_id}"
+                    poll_response = requests.get(poll_url)
+                    
+                    if poll_response.status_code == 200:
+                        result = poll_response.json()
+                        status = result.get('status')
+                        
+                        if status == "completed":
+                            extracted_text = result.get('text', '')
+                            _update_status("Transcription completed successfully.")
+                            
+                            transcription_result = {
+                                "extracted_text": extracted_text.strip(),
+                                "method": "external_transcription_api",
+                                "text_length": len(extracted_text),
+                                "word_count": len(extracted_text.split()) if extracted_text else 0,
+                                "api_metadata": {"job_id": job_id}
+                            }
+                            
+                            # Add LLM summary if available and text is substantial
+                            if OLLAMA_AVAILABLE and len(extracted_text.strip()) > 100:
+                                # Pass status update args down
+                                summary_result = generate_text_summary(
+                                    extracted_text, 
+                                    task_id=task_id, 
+                                    original_filename=original_filename, 
+                                    update_status_func=update_status_func
+                                )
+                                transcription_result.update(summary_result)
+                            
+                            return transcription_result
+                        
+                        elif status == "error":
+                            error_msg = f"Transcription job failed: {result.get('error', 'Unknown error')}"
+                            _update_status(f"Transcription failed: {error_msg}")
+                            return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_failed"}
+                        
+                        else:  # status still "processing"
+                            if attempt % 6 == 0:  # Update status every ~30 seconds
+                                _update_status(f"Still waiting for transcription... (attempt {attempt+1}/{max_attempts})")
+                    
+                    else:
+                        _update_status(f"Error checking transcription status: {poll_response.status_code}")
+                
+                except Exception as poll_error:
+                    _update_status(f"Error polling for results: {str(poll_error)}")
+            
+            # If we get here, we've exceeded max attempts
+            error_msg = f"Transcription timed out after {max_attempts} polling attempts"
+            _update_status("Transcription failed: Timeout")
+            return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_timeout"}
+            
         else:
             error_msg = f"Transcription API failed with status {response.status_code}: {response.text}"
             _update_status(f"Transcription failed: {response.status_code}")
@@ -580,7 +625,8 @@ def generate_text_summary(text: str,
 def extract_text(file_path: str, mime_type: str, 
                  task_id: Optional[str] = None, 
                  original_filename: Optional[str] = None, 
-                 update_status_func: Optional[callable] = None) -> Dict[str, Any]:
+                 update_status_func: Optional[callable] = None,
+                 magika_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Extract text content from a file based on its MIME type.
     Handles different file types and calls appropriate extraction functions.
@@ -592,25 +638,44 @@ def extract_text(file_path: str, mime_type: str,
         task_id: Optional task ID for status updates
         original_filename: Optional original filename for status updates
         update_status_func: Optional function to update status
+        magika_data: Optional Magika analysis data for more accurate file type detection
         
     Returns:
         Dict containing extracted text, metadata, and potentially a summary
     """
     result = {
         "extracted_text": "",
-        "metadata": {"method": "none"}
+        "method": "none"
     }
     
     try:
-        if mime_type.startswith('image/'):
+        # If Magika data is available, use it to potentially override or refine mime_type
+        actual_mime_type = mime_type
+        is_text_file = False
+        
+        if magika_data:
+            # Use Magika's mime type if available and different
+            if magika_data.get("mime_type") and magika_data.get("confidence", 0) > 0.7:
+                actual_mime_type = magika_data.get("mime_type")
+                
+            # Check if Magika identified this as text content
+            is_text_file = magika_data.get("is_text", False)
+            
+            # Log the detected type differences if any
+            if actual_mime_type != mime_type:
+                print(f"Magika overrode mime type: {mime_type} -> {actual_mime_type}")
+        
+        # Process based on determined mime type
+        if actual_mime_type.startswith('image/'):
             result = extract_text_from_image(file_path)
-        elif mime_type == 'application/pdf':
+        elif actual_mime_type == 'application/pdf':
             result = extract_text_from_pdf(file_path)
-        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        elif actual_mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
             result = extract_text_from_docx(file_path)
-        elif mime_type.startswith('text/'):
+        elif actual_mime_type.startswith('text/') or is_text_file:
+            # Handle text files - either by mime type or Magika's is_text flag
             result = extract_text_from_plaintext(file_path)
-        elif mime_type.startswith('audio/') or mime_type.startswith('video/'):
+        elif actual_mime_type.startswith('audio/') or actual_mime_type.startswith('video/'):
              # Pass status update args down to transcription
              result = transcribe_audio_video(
                  file_path, 
@@ -619,11 +684,17 @@ def extract_text(file_path: str, mime_type: str,
                  update_status_func=update_status_func
              )
         else:
-            result["metadata"]["method"] = "unsupported_mime_type"
+            # If Magika detected a specific type that we don't handle yet, record that info
+            if magika_data:
+                result["method"] = "unsupported_mime_type"
+                result["magika_detected_type"] = actual_mime_type
+                result["magika_label"] = magika_data.get("label", "unknown")
+            else:
+                result["method"] = "unsupported_mime_type"
         
         # If text was extracted (and not via transcription which handles its own summary), try summarizing
         extracted_text = result.get("extracted_text", "")
-        if extracted_text and OLLAMA_AVAILABLE and result["metadata"]["method"] not in ["external_transcription_api", "none", "unsupported_mime_type"]:
+        if extracted_text and OLLAMA_AVAILABLE and result.get("method", "none") not in ["external_transcription_api", "none", "unsupported_mime_type"]:
             # Check if it's substantial enough for summary
             if len(extracted_text.strip()) > 100:
                  # Pass status update args down to summarization

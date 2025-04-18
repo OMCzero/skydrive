@@ -8,6 +8,7 @@ py-tlsh>=4.7.2
 pytesseract>=0.3.10
 pdf2image>=1.16.0
 pdfminer.six>=20221105
+reportlab>=4.1.0
 python-docx>=0.8.11
 magika~=0.6.0
 # openai-whisper>=20240930

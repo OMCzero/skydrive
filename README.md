@@ -16,12 +16,17 @@
 - TLSH fuzzy hash for file similarity detection
 - Perceptual hash for images (pHash, dHash, aHash, wHash)
 - EXIF data extraction using ExifTool
+- Automatic thumbnail generation for:
+  - Images (using PIL)
+  - Videos (using FFmpeg)
+  - PDFs (using pdf2image/Poppler)
 - Text extraction from various file formats:
   - OCR for images using Tesseract
   - PDF text extraction with OCR fallback
   - Word document text extraction
   - Plain text files with encoding detection
   - Audio transcription using an external Transcription API (requires separate `transcription_server.py`)
+  - Enhanced file type detection using Magika for more accurate text extraction
 - Modular enrichment system for different file types
 - Task status tracking and task history
 - LLM-based text summarization and image description
@@ -151,6 +156,18 @@ When the server is running, you can access the API documentation at:
 - `GET /search` - Search for files using various filters
 - `GET /download/{doc_id}` - Download a processed file
 - `GET /status` - Check system status (all components)
+- `GET /admin` - Access the admin dashboard with file statistics
+- `GET /admin/stats` - Get detailed stats about files (JSON endpoint for admin dashboard)
+
+## Admin Dashboard
+
+The system includes an admin dashboard accessible at http://localhost:8000/admin that provides statistics about the files stored in the system:
+
+- Biggest file stored (with download link)
+- Pie chart showing distribution of file types
+- Pie chart showing distribution of file uploaders (users)
+
+This dashboard is useful for monitoring system usage and understanding the composition of stored files.
 
 ## Adding New File Type Support
 
@@ -171,3 +188,34 @@ You can see the workflow configuration in the `.github/workflows/docker-build.ym
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Troubleshooting
+
+### PDF Thumbnail Generation Issues
+
+If you're experiencing issues with PDF thumbnail generation in Docker, you can run the included test script to diagnose the problem:
+
+1. Access the container shell:
+   ```bash
+   docker exec -it skydrive-app-1 /bin/bash
+   ```
+
+2. Run the PDF thumbnail test script:
+   ```bash
+   python test_pdf_thumbnail.py
+   ```
+
+3. Check the output for any errors:
+   - If the script runs successfully, it will create and then process a test PDF file
+   - Look for "PDF THUMBNAIL TEST SUCCESSFUL!" message
+   - If errors occur, they will be displayed with details
+
+Common issues include:
+- Missing system dependencies (solved by ensuring Poppler and GhostScript are installed)
+- PDF file format issues (some PDFs may not be processable)
+- Permission problems in the container environment
+
+For local development, make sure you have:
+- Poppler utilities installed (`apt-get install poppler-utils` on Debian/Ubuntu or `brew install poppler` on macOS)
+- GhostScript installed for PDF processing
+- The pdf2image Python package installed (`pip install pdf2image`)
