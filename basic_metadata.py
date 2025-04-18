@@ -266,31 +266,31 @@ def generate_thumbnail(file_path: str, unique_id: str, mime_type: str) -> Option
                 try:
                     # Convert first page of PDF to image
                     import pdf2image  # Import here to avoid circular imports
-                    print(f"Attempting to generate PDF thumbnail for: {file_path}")
+                    logger.info(f"Attempting to generate PDF thumbnail for: {file_path}")
                     
                     # Check if the file exists and is readable
                     if not os.path.exists(file_path):
-                        print(f"PDF file does not exist: {file_path}")
+                        logger.error(f"PDF file does not exist: {file_path}")
                         return None
                         
                     # Get file size to verify it's a valid file
                     file_size = os.path.getsize(file_path)
-                    print(f"PDF file size: {file_size} bytes")
+                    logger.info(f"PDF file size: {file_size} bytes")
                     
                     if file_size == 0:
-                        print(f"PDF file is empty: {file_path}")
+                        logger.warning(f"PDF file is empty: {file_path}")
                         return None
                     
                     # Try first to get PDF info to verify the file is valid
                     try:
                         pdf_info = pdf2image.pdfinfo_from_path(file_path)
-                        print(f"PDF info successfully extracted: {pdf_info}")
+                        logger.info(f"PDF info successfully extracted: {pdf_info}")
                     except Exception as info_err:
-                        print(f"Failed to extract PDF info: {info_err}")
+                        logger.warning(f"Failed to extract PDF info: {info_err}")
                         # Continue anyway as some PDFs might still convert even with info errors
                     
                     # Now try to convert the first page
-                    print(f"Converting PDF to image with size: {THUMBNAIL_SIZE}")
+                    logger.info(f"Converting PDF to image with size: {THUMBNAIL_SIZE}")
                     images = pdf2image.convert_from_path(
                         file_path, 
                         first_page=1, 
