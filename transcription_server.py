@@ -50,7 +50,8 @@ def process_transcription(temp_path: str, job_id: str):
 @app.post("/transcribe/")
 async def transcribe_audio(file: UploadFile, background_tasks: BackgroundTasks):
     # Generate a job ID
-    job_id = f"job_{len(results_store) + 1}"
+    with lock:
+        job_id = f"job_{len(results_store) + 1}"
     
     # Save the uploaded file temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp:
