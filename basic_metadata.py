@@ -645,18 +645,22 @@ def extract_basic_metadata(file_path: str, original_filename: Optional[str] = No
                 _update_status("File enrichment failed.")
         
         # --- Step: Text Extraction (Potentially long - e.g., OCR, Transcription) ---
-        if supports_text_extraction(mime_type, file_path):
+        if supports_text_extraction(mime_type, file_path, file_info):
             text_extraction_func = get_text_extraction_function()
             if text_extraction_func:
                  _update_status(f"Performing text extraction ({mime_type})...") # Specify type
                  try:
+                    # Get Magika data if available
+                    magika_data = file_info.get("magika")
+                    
                     # Pass status update args down to the text extraction function
                     text_data = text_extraction_func(
                         file_path, 
                         mime_type=mime_type, 
                         task_id=task_id, 
                         original_filename=original_filename, 
-                        update_status_func=update_status_func
+                        update_status_func=update_status_func,
+                        magika_data=magika_data  # Pass the Magika data
                     )
                     metadata["text_extraction"] = text_data # Store even if error occurred
                     if "error" in text_data:

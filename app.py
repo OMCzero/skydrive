@@ -583,6 +583,44 @@ async def download_file(doc_id: str):
         print(f"Error downloading file {doc_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
 
+@app.get("/documents/{doc_id}")
+async def get_document_json(doc_id: str):
+    """
+    Get the raw JSON document for a file by its ID.
+    
+    Args:
+        doc_id: The search document ID
+    
+    Returns:
+        The raw JSON document from the search index
+    """
+    if not search_service.available:
+        raise HTTPException(status_code=503, detail="Search service is not available")
+    
+    try:
+        # Search for the document in the index using the same logic as download
+        results = search_service.search("", {"id": doc_id}, limit=1)
+        
+        if not results or not results.get("hits") or len(results["hits"]) == 0:
+            # Fallback method if direct filter fails
+            all_results = search_service.search("", {}, limit=100)
+            matching_docs = [doc for doc in all_results.get("hits", []) if doc.get("id") == doc_id]
+            
+            if not matching_docs:
+                raise HTTPException(status_code=404, detail=f"Document with ID {doc_id} not found")
+            
+            document = matching_docs[0]
+        else:
+            document = results["hits"][0]
+        
+        # Return the raw document as JSON
+        return JSONResponse(content=document)
+        
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error retrieving document {doc_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving document: {str(e)}")
+
 @app.get("/tags/suggest")
 async def suggest_tags_endpoint(q: str = Query(..., description="Tag prefix query")):
     """

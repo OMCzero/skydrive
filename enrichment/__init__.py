@@ -58,13 +58,14 @@ def get_enrichment_function(mime_type: str):
             
     return None
 
-def supports_text_extraction(mime_type: str, file_path: str = None) -> bool:
+def supports_text_extraction(mime_type: str, file_path: str = None, file_info: dict = None) -> bool:
     """
     Check if a MIME type is supported for text extraction.
     
     Args:
         mime_type: The MIME type to check
         file_path: Optional file path to check extension if MIME type fails
+        file_info: Optional file info dict containing Magika data
         
     Returns:
         Boolean indicating whether text extraction is supported
@@ -72,10 +73,34 @@ def supports_text_extraction(mime_type: str, file_path: str = None) -> bool:
     if not TEXT_EXTRACTION_AVAILABLE:
         return False
     
+    # Check if Magika data indicates this is a text file
+    if file_info and "magika" in file_info:
+        magika_data = file_info["magika"]
+        # If Magika explicitly says it's text, process it
+        if isinstance(magika_data, dict) and magika_data.get("is_text", False) and magika_data.get("confidence", 0) > 0.7:
+            return True
+            
+        # If Magika detected a supported mime type with high confidence, use that
+        magika_mime = magika_data.get("mime_type") if isinstance(magika_data, dict) else None
+        if magika_mime and magika_data.get("confidence", 0) > 0.7:
+            for supported_type in TEXT_EXTRACTION_MIME_TYPES:
+                if magika_mime.startswith(supported_type):
+                    return True
+                # Special case for XML-like formats
+                elif supported_type == "application/xml" and (
+                    magika_mime == "text/xml" or "xml" in magika_mime
+                ):
+                    return True
+    
     # First check by MIME type    
     if mime_type:
         for supported_type in TEXT_EXTRACTION_MIME_TYPES:
             if mime_type.startswith(supported_type):
+                return True
+            # Special case for XML-like formats
+            elif supported_type == "application/xml" and (
+                mime_type == "text/xml" or "xml" in mime_type
+            ):
                 return True
     
     # If MIME type check fails and file_path is provided, check by extension
@@ -84,7 +109,7 @@ def supports_text_extraction(mime_type: str, file_path: str = None) -> bool:
         if ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp',  # Images
                   '.pdf',  # PDF
                   '.docx', '.doc',  # Word
-                  '.txt', '.md', '.csv', '.json', '.xml', '.html', '.htm',  # Text
+                  '.txt', '.md', '.csv', '.json', '.xml', '.html', '.htm', '.rss',  # Text
                   '.mp3', '.wav', '.m4a', '.flac', '.aac', '.ogg', '.opus', '.wma',  # Audio
                   '.mp4', '.mkv', '.webm', '.avi', '.mov', '.wmv', '.flv', '.mpg', '.mpeg']:  # Video
             return True

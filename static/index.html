@@ -1217,6 +1217,9 @@
                                         <button onclick="downloadFile('${hit.id}')" class="download-button">
                                             <span class="download-icon">⬇️</span> Download
                                         </button>
+                                        <button onclick="viewJsonData('${hit.id}')" class="download-button" style="background-color: #607D8B;">
+                                            <span>{ }</span> View JSON
+                                        </button>
                                     </div>
                                     
                                     ${summary ? `<div class="result-summary">${summary}</div>` : ''}
@@ -1302,6 +1305,74 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+        }
+        
+        // Function to view raw JSON data
+        function viewJsonData(docId) {
+            if (!docId) {
+                alert('Document ID not found');
+                return;
+            }
+            
+            // Switch to the upload tab to show the result
+            document.querySelector('.tab[data-tab="upload"]').click();
+            
+            // Show loading indicator in the result container
+            const resultContainer = document.getElementById('resultContainer');
+            resultContainer.innerHTML = `
+                <div class="task-status">
+                    <h3>Loading JSON data...</h3>
+                    <div class="loader" style="display: block;"></div>
+                </div>
+            `;
+            
+            // Fetch the raw JSON data
+            fetch(`/documents/${docId}`)
+                .then(response => response.json())
+                .then(data => {
+                    // Format the JSON with syntax highlighting
+                    const formattedJson = JSON.stringify(data, null, 2);
+                    
+                    // Display the JSON data
+                    resultContainer.innerHTML = `
+                        <div class="result-data">
+                            <h3>Raw JSON Data for Document ID: ${docId}</h3>
+                            <button onclick="copyJsonToClipboard()" class="download-button" style="margin-bottom: 10px;">
+                                Copy to Clipboard
+                            </button>
+                            <pre id="jsonContent" style="max-height: 600px; overflow: auto; background-color: #f5f5f5; padding: 15px; border-radius: 5px; border: 1px solid #ddd;">${formattedJson}</pre>
+                        </div>
+                    `;
+                })
+                .catch(error => {
+                    resultContainer.innerHTML = `
+                        <div class="error-message">
+                            <h3>Error Fetching JSON Data</h3>
+                            <p>${error.message}</p>
+                        </div>
+                    `;
+                });
+        }
+        
+        // Function to copy JSON to clipboard
+        function copyJsonToClipboard() {
+            const jsonContent = document.getElementById('jsonContent');
+            if (!jsonContent) return;
+            
+            const textArea = document.createElement('textarea');
+            textArea.value = jsonContent.textContent;
+            document.body.appendChild(textArea);
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                const msg = successful ? 'JSON copied to clipboard!' : 'Unable to copy';
+                alert(msg);
+            } catch (err) {
+                alert('Error copying text: ' + err);
+            }
+            
+            document.body.removeChild(textArea);
         }
         
         // Search input listeners

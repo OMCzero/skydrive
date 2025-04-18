@@ -625,7 +625,8 @@ def generate_text_summary(text: str,
 def extract_text(file_path: str, mime_type: str, 
                  task_id: Optional[str] = None, 
                  original_filename: Optional[str] = None, 
-                 update_status_func: Optional[callable] = None) -> Dict[str, Any]:
+                 update_status_func: Optional[callable] = None,
+                 magika_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Extract text content from a file based on its MIME type.
     Handles different file types and calls appropriate extraction functions.
@@ -637,6 +638,7 @@ def extract_text(file_path: str, mime_type: str,
         task_id: Optional task ID for status updates
         original_filename: Optional original filename for status updates
         update_status_func: Optional function to update status
+        magika_data: Optional Magika analysis data for more accurate file type detection
         
     Returns:
         Dict containing extracted text, metadata, and potentially a summary
@@ -647,15 +649,33 @@ def extract_text(file_path: str, mime_type: str,
     }
     
     try:
-        if mime_type.startswith('image/'):
+        # If Magika data is available, use it to potentially override or refine mime_type
+        actual_mime_type = mime_type
+        is_text_file = False
+        
+        if magika_data:
+            # Use Magika's mime type if available and different
+            if magika_data.get("mime_type") and magika_data.get("confidence", 0) > 0.7:
+                actual_mime_type = magika_data.get("mime_type")
+                
+            # Check if Magika identified this as text content
+            is_text_file = magika_data.get("is_text", False)
+            
+            # Log the detected type differences if any
+            if actual_mime_type != mime_type:
+                print(f"Magika overrode mime type: {mime_type} -> {actual_mime_type}")
+        
+        # Process based on determined mime type
+        if actual_mime_type.startswith('image/'):
             result = extract_text_from_image(file_path)
-        elif mime_type == 'application/pdf':
+        elif actual_mime_type == 'application/pdf':
             result = extract_text_from_pdf(file_path)
-        elif mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        elif actual_mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
             result = extract_text_from_docx(file_path)
-        elif mime_type.startswith('text/'):
+        elif actual_mime_type.startswith('text/') or is_text_file:
+            # Handle text files - either by mime type or Magika's is_text flag
             result = extract_text_from_plaintext(file_path)
-        elif mime_type.startswith('audio/') or mime_type.startswith('video/'):
+        elif actual_mime_type.startswith('audio/') or actual_mime_type.startswith('video/'):
              # Pass status update args down to transcription
              result = transcribe_audio_video(
                  file_path, 
@@ -664,7 +684,13 @@ def extract_text(file_path: str, mime_type: str,
                  update_status_func=update_status_func
              )
         else:
-            result["method"] = "unsupported_mime_type"
+            # If Magika detected a specific type that we don't handle yet, record that info
+            if magika_data:
+                result["method"] = "unsupported_mime_type"
+                result["magika_detected_type"] = actual_mime_type
+                result["magika_label"] = magika_data.get("label", "unknown")
+            else:
+                result["method"] = "unsupported_mime_type"
         
         # If text was extracted (and not via transcription which handles its own summary), try summarizing
         extracted_text = result.get("extracted_text", "")

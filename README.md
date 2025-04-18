@@ -26,6 +26,7 @@
   - Word document text extraction
   - Plain text files with encoding detection
   - Audio transcription using an external Transcription API (requires separate `transcription_server.py`)
+  - Enhanced file type detection using Magika for more accurate text extraction
 - Modular enrichment system for different file types
 - Task status tracking and task history
 - LLM-based text summarization and image description
