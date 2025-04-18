@@ -643,7 +643,7 @@ def extract_text(file_path: str, mime_type: str,
     """
     result = {
         "extracted_text": "",
-        "metadata": {"method": "none"}
+        "method": "none"
     }
     
     try:
@@ -664,11 +664,11 @@ def extract_text(file_path: str, mime_type: str,
                  update_status_func=update_status_func
              )
         else:
-            result["metadata"]["method"] = "unsupported_mime_type"
+            result["method"] = "unsupported_mime_type"
         
         # If text was extracted (and not via transcription which handles its own summary), try summarizing
         extracted_text = result.get("extracted_text", "")
-        if extracted_text and OLLAMA_AVAILABLE and result["metadata"]["method"] not in ["external_transcription_api", "none", "unsupported_mime_type"]:
+        if extracted_text and OLLAMA_AVAILABLE and result.get("method", "none") not in ["external_transcription_api", "none", "unsupported_mime_type"]:
             # Check if it's substantial enough for summary
             if len(extracted_text.strip()) > 100:
                  # Pass status update args down to summarization

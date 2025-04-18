@@ -9,6 +9,13 @@ import mimetypes
 import c2pa
 import pathlib
 import uuid
+import logging  # Add logging import
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    handlers=[logging.StreamHandler()])
+logger = logging.getLogger("basic_metadata")
 
 # For perceptual hashing (primarily for images)
 try:
@@ -74,10 +81,21 @@ os.makedirs(THUMBNAIL_DIR, exist_ok=True)
 
 def _is_ffmpeg_available() -> bool:
     """Check if ffmpeg command is available."""
+    import subprocess as sp  # Import locally for scope safety
     try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-        return True
-    except (FileNotFoundError, subprocess.CalledProcessError):
+        result = sp.run(["ffmpeg", "-version"], capture_output=True, text=True)
+        if result.returncode == 0:
+            logger.info(f"FFmpeg is available: {result.stdout.split('\\n')[0]}")
+            return True
+        else:
+            logger.warning(f"FFmpeg check returned non-zero exit code: {result.returncode}")
+            logger.warning(f"FFmpeg stderr: {result.stderr}")
+            return False
+    except FileNotFoundError:
+        logger.warning("FFmpeg not found on system PATH")
+        return False
+    except Exception as e:
+        logger.warning(f"Error checking for FFmpeg: {str(e)}")
         return False
 
 def _is_pdf2image_available() -> bool:
@@ -120,9 +138,21 @@ def generate_thumbnail(file_path: str, unique_id: str, mime_type: str) -> Option
     Returns:
         Dict containing thumbnail info (path, dimensions) or None if unsupported/error.
     """
+    # Import subprocess locally to ensure it's available in this function
+    import subprocess as sp
+    
+    logger.info(f"Starting thumbnail generation for file: {file_path} with ID: {unique_id}, MIME type: {mime_type}")
     thumbnail_filename = f"{unique_id}_thumb.jpg"
     thumbnail_path = os.path.join(THUMBNAIL_DIR, thumbnail_filename)
-    thumbnail_rel_path = os.path.join("thumbnails", thumbnail_filename) # Relative path for storage
+    thumbnail_rel_path = f"/thumbnails/{thumbnail_filename}"
+    
+    logger.info(f"Thumbnail will be saved to: {thumbnail_path}")
+    logger.info(f"THUMBNAIL_DIR value: {THUMBNAIL_DIR}")
+    
+    # Check if directory exists
+    if not os.path.exists(THUMBNAIL_DIR):
+        logger.warning(f"Thumbnail directory doesn't exist! Creating: {THUMBNAIL_DIR}")
+        os.makedirs(THUMBNAIL_DIR, exist_ok=True)
 
     try:
         # --- Image Thumbnail Generation ---
@@ -157,6 +187,7 @@ def generate_thumbnail(file_path: str, unique_id: str, mime_type: str) -> Option
 
         # --- Video Thumbnail Generation ---
         elif mime_type.startswith("video/") and FFMPEG_AVAILABLE:
+            logger.info(f"Processing video file for thumbnail: {file_path}")
             try:
                 # Extract frame at 1 second, scale to fit width 150, maintain aspect ratio
                 cmd = [
@@ -168,26 +199,65 @@ def generate_thumbnail(file_path: str, unique_id: str, mime_type: str) -> Option
                     "-q:v", "3",          # Quality (2-5 is good)
                     thumbnail_path        # Output path
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
+                
+                # Log the exact command being executed
+                logger.info(f"Executing FFmpeg command: {' '.join(cmd)}")
+                
+                # Run the command with full output capture - use sp instead of subprocess
+                result = sp.run(cmd, capture_output=True, text=True)
+                
+                # Log the command result
+                if result.returncode == 0:
+                    logger.info("FFmpeg command completed successfully")
+                else:
+                    logger.error(f"FFmpeg command failed with return code: {result.returncode}")
+                    logger.error(f"FFmpeg stderr: {result.stderr}")
+                    logger.error(f"FFmpeg stdout: {result.stdout}")
+                
                 # Check if thumbnail was created
                 if os.path.exists(thumbnail_path):
-                     # We don't easily know the dimensions without reading the thumb back
+                    # Log file info
+                    file_stats = os.stat(thumbnail_path)
+                    logger.info(f"Thumbnail file created: {thumbnail_path}, Size: {file_stats.st_size} bytes")
+                    
+                    # Read back image dimensions to provide proper metadata for UI
+                    if IMAGEHASH_AVAILABLE and Image:
+                        try:
+                            with Image.open(thumbnail_path) as thumb_img:
+                                thumb_w, thumb_h = thumb_img.size
+                                logger.info(f"Thumbnail dimensions: {thumb_w}x{thumb_h}")
+                                return {
+                                    "thumbnail_path": thumbnail_rel_path,
+                                    "width": thumb_w,
+                                    "height": thumb_h,
+                                    "format": THUMBNAIL_FORMAT
+                                }
+                        except Exception as img_err:
+                            logger.error(f"Error reading video thumbnail dimensions: {img_err}")
+                    
+                    # Fallback if we can't read dimensions
+                    logger.info(f"Returning thumbnail info with fallback dimensions: width={THUMBNAIL_SIZE[0]}, height=None")
                     return {
                         "thumbnail_path": thumbnail_rel_path,
-                        "width": None, # Could read image back, but maybe not worth it
+                        "width": THUMBNAIL_SIZE[0],  # Use requested width as fallback
                         "height": None,
                         "format": THUMBNAIL_FORMAT
                     }
                 else:
-                     print(f"FFmpeg ran but thumbnail not found for {file_path}.")
-                     print(f"FFmpeg stderr: {result.stderr}")
-                     return None
-            except subprocess.CalledProcessError as vid_err:
-                print(f"Error generating video thumbnail for {file_path}: {vid_err.stderr}")
-                return None
+                    logger.error(f"FFmpeg ran but thumbnail not found at: {thumbnail_path}")
+                    logger.error(f"FFmpeg stderr: {result.stderr}")
+                    
+                    # Check if parent directory exists and is writable
+                    parent_dir = os.path.dirname(thumbnail_path)
+                    logger.info(f"Checking parent directory: {parent_dir}")
+                    if os.path.exists(parent_dir):
+                        logger.info(f"Parent directory exists. Is writable: {os.access(parent_dir, os.W_OK)}")
+                    else:
+                        logger.error(f"Parent directory does not exist: {parent_dir}")
+                    
+                    return None
             except Exception as vid_err_generic:
-                print(f"Generic error generating video thumbnail for {file_path}: {vid_err_generic}")
+                logger.exception(f"Generic error generating video thumbnail: {vid_err_generic}")
                 return None
                 
         # --- PDF Thumbnail Generation ---

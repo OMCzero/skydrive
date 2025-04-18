@@ -9,7 +9,7 @@ import threading
 app = FastAPI()
 
 # Load the Whisper model
-model = whisper.load_model("turbo")  # or "medium", "small" based on your hardware
+model = whisper.load_model("tiny")  # or "medium", "small" based on your hardware
 
 # Store results in memory (you might want to use a proper database for production)
 results_store: Dict[str, Dict] = {}
