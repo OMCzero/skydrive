@@ -247,6 +247,20 @@ class SearchService:
                 "exactness"
             ])
             
+            # Configure sortable attributes
+            self.index.update_sortable_attributes([
+                "file_info.size_bytes",
+                "upload_date"
+            ])
+            
+            # Configure faceting
+            try:
+                self.index.update_faceting_settings({
+                    "maxValuesPerFacet": 100
+                })
+            except Exception as facet_error:
+                print(f"Warning: Could not update faceting settings: {str(facet_error)}")
+            
             print("Meilisearch index configuration updated")
         except Exception as config_error:
             print(f"Error configuring Meilisearch index: {str(config_error)}")
@@ -326,7 +340,7 @@ class SearchService:
         
         return document
     
-    def search(self, query: str, filters: Optional[Dict[str, Any]] = None, limit: int = 20) -> Dict[str, Any]:
+    def search(self, query: str, filters: Optional[Dict[str, Any]] = None, limit: int = 20, sort: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         Search for documents in the index.
         
@@ -334,6 +348,7 @@ class SearchService:
             query: The search query
             filters: Optional dict of filters to apply
             limit: Maximum number of results to return
+            sort: Optional list of sort criteria (e.g. ["file_info.size:desc"])
             
         Returns:
             Search results
@@ -346,6 +361,10 @@ class SearchService:
             search_params = {
                 "limit": limit
             }
+            
+            # Add sort if provided
+            if sort:
+                search_params["sort"] = sort
             
             # Add filters if provided
             if filters:
@@ -468,6 +487,72 @@ class SearchService:
         except Exception as stats_error:
             print(f"Error getting stats: {str(stats_error)}")
             return {"available": False, "error": str(stats_error)}
+    
+    def get_distribution_stats(self, facet_name: str) -> Dict[str, int]:
+        """
+        Get distribution statistics for a particular facet.
+        
+        Args:
+            facet_name: The name of the facet to get distribution for
+            
+        Returns:
+            Dictionary with facet values as keys and counts as values
+        """
+        if not self.available or not self.index:
+            return {}
+            
+        try:
+            # Make sure this is a filterable attribute that can be faceted
+            facets = [facet_name]
+            results = self.index.search("", {
+                "facets": facets,
+                "limit": 0  # We only need facet data, not actual documents
+            })
+            
+            distribution = {}
+            
+            # Extract facet distribution from results
+            if "facetDistribution" in results and facet_name in results["facetDistribution"]:
+                distribution = results["facetDistribution"][facet_name]
+            
+            return distribution
+        except Exception as e:
+            print(f"Error getting distribution stats for {facet_name}: {str(e)}")
+            return {}
+    
+    def get_biggest_file(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the biggest file by size.
+        
+        Returns:
+            Document with the largest size or None if not found
+        """
+        if not self.available or not self.index:
+            return None
+            
+        try:
+            results = self.index.search(
+                "",
+                {
+                    "sort": ["file_info.size_bytes:desc"],
+                    "limit": 1,
+                    # Only fetch the fields we need
+                    "attributesToRetrieve": [
+                        "id",
+                        "file_info.filename",
+                        "file_info.size_bytes",
+                        "file_info.size_formatted",
+                        "user_login"
+                    ]
+                }
+            )
+            
+            if results and "hits" in results and len(results["hits"]) > 0:
+                return results["hits"][0]
+            return None
+        except Exception as e:
+            print(f"Error getting biggest file: {str(e)}")
+            return None
 
 
 # Create a singleton instance

@@ -436,35 +436,80 @@ def transcribe_audio_video(file_path: str,
         with open(file_path, 'rb') as f:
             files = {'file': f}
             
-            # --- Call Transcription API (Potentially long) ---
-            _update_status("Transcribing audio/video...")
-            response = requests.post(TRANSCRIPTION_API_URL, files=files, timeout=3600) # Timeout 1 hour
-            _update_status("Transcription API response received.")
+            # --- Submit job to Transcription API ---
+            _update_status("Submitting audio/video to transcription API...")
+            response = requests.post(TRANSCRIPTION_API_URL, files=files)
             
         if response.status_code == 200:
-            result = response.json()
-            extracted_text = result.get('transcription', '')
+            job_data = response.json()
+            job_id = job_data.get('job_id')
             
-            transcription_result = {
-                "extracted_text": extracted_text.strip(),
-                "method": "external_transcription_api",
-                "text_length": len(extracted_text),
-                "word_count": len(extracted_text.split()) if extracted_text else 0,
-                "api_metadata": result.get('metadata') # Include any extra metadata from API
-            }
+            if not job_id:
+                error_msg = f"Transcription API did not return a job_id: {job_data}"
+                _update_status("Transcription failed: No job ID returned")
+                return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_failed"}
             
-            # Add LLM summary if available and text is substantial
-            if OLLAMA_AVAILABLE and len(extracted_text.strip()) > 100:
-                # Pass status update args down
-                summary_result = generate_text_summary(
-                    extracted_text, 
-                    task_id=task_id, 
-                    original_filename=original_filename, 
-                    update_status_func=update_status_func
-                )
-                transcription_result.update(summary_result)
+            # Poll for results
+            _update_status(f"Transcription job submitted (ID: {job_id}). Waiting for results...")
             
-            return transcription_result
+            import time
+            max_attempts = 60  # Wait up to 5 minutes (60 x 5 seconds)
+            for attempt in range(max_attempts):
+                time.sleep(5)  # Wait 5 seconds between polling attempts
+                
+                try:
+                    poll_url = f"{TRANSCRIPTION_API_URL}/{job_id}" if not TRANSCRIPTION_API_URL.endswith('/') else f"{TRANSCRIPTION_API_URL}{job_id}"
+                    poll_response = requests.get(poll_url)
+                    
+                    if poll_response.status_code == 200:
+                        result = poll_response.json()
+                        status = result.get('status')
+                        
+                        if status == "completed":
+                            extracted_text = result.get('text', '')
+                            _update_status("Transcription completed successfully.")
+                            
+                            transcription_result = {
+                                "extracted_text": extracted_text.strip(),
+                                "method": "external_transcription_api",
+                                "text_length": len(extracted_text),
+                                "word_count": len(extracted_text.split()) if extracted_text else 0,
+                                "api_metadata": {"job_id": job_id}
+                            }
+                            
+                            # Add LLM summary if available and text is substantial
+                            if OLLAMA_AVAILABLE and len(extracted_text.strip()) > 100:
+                                # Pass status update args down
+                                summary_result = generate_text_summary(
+                                    extracted_text, 
+                                    task_id=task_id, 
+                                    original_filename=original_filename, 
+                                    update_status_func=update_status_func
+                                )
+                                transcription_result.update(summary_result)
+                            
+                            return transcription_result
+                        
+                        elif status == "error":
+                            error_msg = f"Transcription job failed: {result.get('error', 'Unknown error')}"
+                            _update_status(f"Transcription failed: {error_msg}")
+                            return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_failed"}
+                        
+                        else:  # status still "processing"
+                            if attempt % 6 == 0:  # Update status every ~30 seconds
+                                _update_status(f"Still waiting for transcription... (attempt {attempt+1}/{max_attempts})")
+                    
+                    else:
+                        _update_status(f"Error checking transcription status: {poll_response.status_code}")
+                
+                except Exception as poll_error:
+                    _update_status(f"Error polling for results: {str(poll_error)}")
+            
+            # If we get here, we've exceeded max attempts
+            error_msg = f"Transcription timed out after {max_attempts} polling attempts"
+            _update_status("Transcription failed: Timeout")
+            return {"extracted_text": "", "error": error_msg, "method": "external_transcription_api_timeout"}
+            
         else:
             error_msg = f"Transcription API failed with status {response.status_code}: {response.text}"
             _update_status(f"Transcription failed: {response.status_code}")

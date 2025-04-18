@@ -48,6 +48,12 @@ async def get_index():
     with open("static/index.html", "r") as f:
         return f.read()
 
+@app.get("/admin", response_class=HTMLResponse)
+async def get_admin():
+    """Serve the admin.html page"""
+    with open("static/admin.html", "r") as f:
+        return f.read()
+
 @app.get("/status")
 async def get_status():
     """Get the status of system components."""
@@ -274,6 +280,73 @@ async def get_search_stats():
     stats = search_service.get_stats()
     
     return JSONResponse(content=stats)
+
+@app.get("/admin/stats")
+async def get_admin_stats():
+    """
+    Get detailed admin statistics about the files in the system.
+    
+    Returns:
+        - Biggest file stored (filename, size, uploader)
+        - Distribution of file types
+        - Distribution of uploaders
+        - Distribution of tags
+    """
+    if not search_service.available:
+        return JSONResponse(
+            status_code=503, 
+            content={"error": "Search service is not available"}
+        )
+    
+    # Get total document count
+    basic_stats = search_service.get_stats()
+    
+    # Get the biggest file - efficiently fetches just one document
+    biggest_file_doc = search_service.get_biggest_file()
+    biggest_file = None
+    if biggest_file_doc:
+        biggest_file = {
+            "id": biggest_file_doc.get("id"),
+            "filename": biggest_file_doc.get("file_info", {}).get("filename", "Unknown"),
+            "size": biggest_file_doc.get("file_info", {}).get("size_bytes", 0),
+            "size_formatted": biggest_file_doc.get("file_info", {}).get("size_formatted", "0 B"),
+            "uploader": biggest_file_doc.get("user_login", "Unknown User")
+        }
+        
+        # Format size for display if needed
+        if "file_info" in biggest_file_doc and "size_bytes" in biggest_file_doc["file_info"]:
+            size_bytes = biggest_file_doc["file_info"]["size_bytes"]
+            biggest_file["size"] = size_bytes
+            
+            # Format size for display
+            if size_bytes < 1024:
+                biggest_file["size_formatted"] = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                biggest_file["size_formatted"] = f"{size_bytes/1024:.1f} KB"
+            elif size_bytes < 1024 * 1024 * 1024:
+                biggest_file["size_formatted"] = f"{size_bytes/(1024*1024):.1f} MB"
+            else:
+                biggest_file["size_formatted"] = f"{size_bytes/(1024*1024*1024):.1f} GB"
+    
+    # Get file type distribution using facets
+    file_types = search_service.get_distribution_stats("file_info.mime_type")
+    
+    # Get uploader distribution using facets
+    uploaders = search_service.get_distribution_stats("user_login")
+    
+    # Get tag distribution using facets
+    tags = search_service.get_distribution_stats("tags")
+    
+    # Sort tags by count (descending)
+    sorted_tags = dict(sorted(tags.items(), key=lambda item: item[1], reverse=True))
+    
+    return JSONResponse(content={
+        "total_documents": basic_stats.get("documents_count", 0),
+        "biggest_file": biggest_file,
+        "file_type_distribution": file_types,
+        "uploader_distribution": uploaders,
+        "tag_distribution": sorted_tags
+    })
     
 @app.get("/task/{task_id}")
 async def get_task_status(task_id: str, full_metadata: bool = Query(True, description="Include full metadata")):

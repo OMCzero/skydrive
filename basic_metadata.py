@@ -80,12 +80,37 @@ def _is_ffmpeg_available() -> bool:
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
 
+def _is_pdf2image_available() -> bool:
+    """Check if pdf2image library is available."""
+    try:
+        # First check if the Python package is available
+        import pdf2image
+        
+        # Then verify that poppler utilities are installed by running a basic command
+        import subprocess
+        result = subprocess.run(["pdftoppm", "-v"], capture_output=True, text=True)
+        if "pdftoppm version" in result.stderr:
+            print(f"Poppler utilities found: {result.stderr.strip()}")
+            # Simple test passed
+            return True
+        else:
+            print(f"Poppler utilities not found or not working properly: {result.stderr.strip()}")
+            return False
+    except ImportError as ie:
+        print(f"pdf2image import failed: {ie}")
+        return False
+    except Exception as e:
+        print(f"Error checking PDF to image availability: {e}")
+        return False
+
 FFMPEG_AVAILABLE = _is_ffmpeg_available()
+PDF2IMAGE_AVAILABLE = _is_pdf2image_available()
 print(f"FFmpeg available: {FFMPEG_AVAILABLE}")
+print(f"PDF to image conversion available: {PDF2IMAGE_AVAILABLE}")
 
 def generate_thumbnail(file_path: str, unique_id: str, mime_type: str) -> Optional[Dict[str, Any]]:
     """
-    Generate a thumbnail for image or video files.
+    Generate a thumbnail for image, video, or PDF files.
 
     Args:
         file_path: Path to the original file.
@@ -164,10 +189,96 @@ def generate_thumbnail(file_path: str, unique_id: str, mime_type: str) -> Option
             except Exception as vid_err_generic:
                 print(f"Generic error generating video thumbnail for {file_path}: {vid_err_generic}")
                 return None
+                
+        # --- PDF Thumbnail Generation ---
+        elif mime_type == "application/pdf":
+            if PDF2IMAGE_AVAILABLE:
+                try:
+                    # Convert first page of PDF to image
+                    import pdf2image  # Import here to avoid circular imports
+                    print(f"Attempting to generate PDF thumbnail for: {file_path}")
+                    
+                    # Check if the file exists and is readable
+                    if not os.path.exists(file_path):
+                        print(f"PDF file does not exist: {file_path}")
+                        return None
+                        
+                    # Get file size to verify it's a valid file
+                    file_size = os.path.getsize(file_path)
+                    print(f"PDF file size: {file_size} bytes")
+                    
+                    if file_size == 0:
+                        print(f"PDF file is empty: {file_path}")
+                        return None
+                    
+                    # Try first to get PDF info to verify the file is valid
+                    try:
+                        pdf_info = pdf2image.pdfinfo_from_path(file_path)
+                        print(f"PDF info successfully extracted: {pdf_info}")
+                    except Exception as info_err:
+                        print(f"Failed to extract PDF info: {info_err}")
+                        # Continue anyway as some PDFs might still convert even with info errors
+                    
+                    # Now try to convert the first page
+                    print(f"Converting PDF to image with size: {THUMBNAIL_SIZE}")
+                    images = pdf2image.convert_from_path(
+                        file_path, 
+                        first_page=1, 
+                        last_page=1,
+                        size=THUMBNAIL_SIZE
+                    )
+                    
+                    if not images:
+                        print(f"Failed to convert PDF to image: {file_path} - No images returned")
+                        return None
+                        
+                    print(f"Successfully converted PDF to {len(images)} image(s)")
+                    
+                    # Save the first page as thumbnail
+                    first_page = images[0]
+                    
+                    # Ensure image is in RGB mode for JPEG saving
+                    if first_page.mode not in ('RGB', 'L'):
+                        print(f"Converting image from {first_page.mode} to RGB")
+                        first_page = first_page.convert('RGB')
+                        
+                    # Get width and height before saving
+                    thumb_w, thumb_h = first_page.size
+                    print(f"Thumbnail dimensions: {thumb_w}x{thumb_h}")
+                    
+                    # Save the thumbnail
+                    print(f"Saving thumbnail to: {thumbnail_path}")
+                    first_page.save(thumbnail_path, THUMBNAIL_FORMAT)
+                    
+                    if os.path.exists(thumbnail_path):
+                        print(f"Thumbnail successfully saved to: {thumbnail_path}")
+                    else:
+                        print(f"Failed to save thumbnail - file not found: {thumbnail_path}")
+                        return None
+                    
+                    return {
+                        "thumbnail_path": thumbnail_rel_path,
+                        "width": thumb_w,
+                        "height": thumb_h,
+                        "format": THUMBNAIL_FORMAT
+                    }
+                except Exception as pdf_err:
+                    print(f"Error generating PDF thumbnail for {file_path}: {pdf_err}")
+                    # Try to check if poppler is working correctly
+                    try:
+                        import subprocess
+                        result = subprocess.run(["pdftoppm", "-v"], capture_output=True, text=True)
+                        print(f"pdftoppm version: {result.stderr.strip()}")
+                    except Exception as poppler_err:
+                        print(f"Poppler utilities check failed: {poppler_err}")
+                    return None
+            else:
+                print(f"PDF to image conversion not available for file: {file_path} - PDF2IMAGE_AVAILABLE={PDF2IMAGE_AVAILABLE}")
+                return None
 
         # --- Unsupported Type ---
         else:
-            return None # Not an image or video, or dependencies missing
+            return None # Not an image, video, or PDF, or dependencies missing
 
     except Exception as e:
         print(f"Failed to generate thumbnail for {file_path}: {e}")
@@ -435,7 +546,7 @@ def extract_basic_metadata(file_path: str, original_filename: Optional[str] = No
 
     # --- Step: Thumbnail Generation ---
     mime_type_for_thumb = file_info.get("mime_type", "")
-    if mime_type_for_thumb.startswith("image/") or mime_type_for_thumb.startswith("video/"):
+    if mime_type_for_thumb.startswith("image/") or mime_type_for_thumb.startswith("video/") or mime_type_for_thumb == "application/pdf":
          _update_status("Generating thumbnail...")
          thumbnail_info = generate_thumbnail(file_path, unique_id, mime_type_for_thumb)
          if thumbnail_info:
