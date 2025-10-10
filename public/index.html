@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Processor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.5rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            background: #f0f3ff;
+            border-color: #764ba2;
+        }
+
+        .upload-area input[type="file"] {
+            display: none;
+        }
+
+        .upload-icon {
+            font-size: 3rem;
+            margin-bottom: 10px;
+        }
+
+        .upload-text {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .file-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input[type="text"], input[type="search"] {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        input[type="text"]:focus, input[type="search"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #764ba2;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .results {
+            margin-top: 20px;
+        }
+
+        .result-item {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .result-item h3 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .result-item p {
+            color: #666;
+            margin: 4px 0;
+            font-size: 0.9rem;
+        }
+
+        .result-item .hash {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status.show {
+            display: block;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+
+        .loader.show {
+            display: block;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .progress-container {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .progress-container.show {
+            display: block;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 6px;
+            background: white;
+            transition: all 0.3s;
+        }
+
+        .progress-step.completed {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+        }
+
+        .progress-step.active {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .progress-step.pending {
+            background: #f8f9fa;
+            border-left: 4px solid #e0e0e0;
+        }
+
+        .progress-icon {
+            margin-right: 12px;
+            font-size: 1.2rem;
+        }
+
+        .progress-label {
+            flex: 1;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .progress-time {
+            font-size: 0.85rem;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>File Processor</h1>
+
+        <div class="card">
+            <h2>Upload File</h2>
+            <form id="uploadForm">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <div class="upload-text">
+                        <strong>Click to select a file</strong> or drag and drop
+                        <br>
+                        <small>Supports all file types</small>
+                    </div>
+                    <input type="file" id="fileInput" name="file" required>
+                </div>
+                <div class="file-info" id="fileInfo"></div>
+                <button type="submit" id="uploadBtn" style="margin-top: 20px; width: 100%;" disabled>Upload & Process</button>
+            </form>
+            <div class="loader" id="uploadLoader"></div>
+            <div class="status" id="uploadStatus"></div>
+            <div class="progress-container" id="progressContainer">
+                <h3 style="margin-bottom: 15px; color: #333;">Processing Progress</h3>
+                <div id="progressSteps"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Search Files</h2>
+            <div class="search-box">
+                <input type="search" id="searchInput" placeholder="Search by filename, hash, or content...">
+                <button onclick="searchFiles()">Search</button>
+            </div>
+            <div class="loader" id="searchLoader"></div>
+            <div class="status" id="searchStatus"></div>
+            <div class="results" id="searchResults"></div>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadForm = document.getElementById('uploadForm');
+        const uploadLoader = document.getElementById('uploadLoader');
+        const uploadStatus = document.getElementById('uploadStatus');
+        const searchInput = document.getElementById('searchInput');
+        const searchLoader = document.getElementById('searchLoader');
+        const searchStatus = document.getElementById('searchStatus');
+        const searchResults = document.getElementById('searchResults');
+
+        // Click to upload
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        // Drag and drop handlers
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                showFileInfo(e.dataTransfer.files[0]);
+            }
+        });
+
+        // File selection handler
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                showFileInfo(e.target.files[0]);
+            }
+        });
+
+        function showFileInfo(file) {
+            const size = (file.size / 1024).toFixed(2);
+            fileInfo.innerHTML = `
+                <strong>Selected:</strong> ${file.name}<br>
+                <strong>Size:</strong> ${size} KB<br>
+                <strong>Type:</strong> ${file.type || 'Unknown'}
+            `;
+            fileInfo.classList.add('show');
+            uploadBtn.disabled = false;
+        }
+
+        // Progress tracking state
+        let currentWorkflowId = null;
+        let progressInterval = null;
+
+        const workflowSteps = [
+            { id: 'hash-file', label: 'Hashing file (SHA-256 & ssdeep)', icon: '🔐' },
+            { id: 'detect-file-type', label: 'Detecting file type', icon: '🔍' },
+            { id: 'caption-image', label: 'Processing content', icon: '🤖' },
+            { id: 'process-pdf', label: 'Processing content', icon: '📄' },
+            { id: 'store-in-r2', label: 'Storing in R2', icon: '☁️' },
+            { id: 'save-metadata-to-d1', label: 'Saving metadata', icon: '💾' }
+        ];
+
+        // Upload form handler
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            uploadBtn.disabled = true;
+            uploadLoader.classList.add('show');
+            uploadStatus.className = 'status';
+            document.getElementById('progressContainer').classList.remove('show');
+            document.getElementById('progressSteps').innerHTML = '';
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                uploadLoader.classList.remove('show');
+
+                if (response.ok) {
+                    showStatus(uploadStatus, 'info', `File uploaded! Processing...`);
+
+                    // Start tracking workflow progress
+                    currentWorkflowId = result.workflowInstanceId;
+                    initProgressTracking(currentWorkflowId);
+                } else {
+                    showStatus(uploadStatus, 'error', `Error: ${result.error || 'Upload failed'}`);
+                    uploadBtn.disabled = false;
+                }
+            } catch (error) {
+                uploadLoader.classList.remove('show');
+                showStatus(uploadStatus, 'error', `Error: ${error.message}`);
+                uploadBtn.disabled = false;
+            }
+        });
+
+        async function initProgressTracking(workflowId) {
+            document.getElementById('progressContainer').classList.add('show');
+
+            // Initialize progress steps
+            const progressStepsEl = document.getElementById('progressSteps');
+            progressStepsEl.innerHTML = workflowSteps.map(step => `
+                <div class="progress-step pending" id="step-${step.id}">
+                    <span class="progress-icon">${step.icon}</span>
+                    <span class="progress-label">${step.label}</span>
+                    <span class="progress-time"></span>
+                </div>
+            `).join('');
+
+            // Start polling
+            pollWorkflowStatus(workflowId);
+        }
+
+        async function pollWorkflowStatus(workflowId) {
+            try {
+                const response = await fetch(`/api/status?id=${workflowId}`);
+                const result = await response.json();
+
+                if (response.ok && result.status) {
+                    updateProgressSteps(result.status);
+
+                    // Check if workflow is complete
+                    if (result.status.status === 'complete' || result.status.status === 'error') {
+                        handleWorkflowComplete(result.status);
+                    } else {
+                        // Continue polling every 1 second
+                        setTimeout(() => pollWorkflowStatus(workflowId), 1000);
+                    }
+                } else {
+                    console.error('Failed to get workflow status');
+                    setTimeout(() => pollWorkflowStatus(workflowId), 2000);
+                }
+            } catch (error) {
+                console.error('Error polling workflow status:', error);
+                setTimeout(() => pollWorkflowStatus(workflowId), 2000);
+            }
+        }
+
+        function updateProgressSteps(status) {
+            // Update steps based on workflow status
+            if (status.steps) {
+                status.steps.forEach(step => {
+                    const stepEl = document.getElementById(`step-${step.name}`);
+                    if (stepEl) {
+                        stepEl.className = 'progress-step';
+
+                        if (step.status === 'complete') {
+                            stepEl.classList.add('completed');
+                        } else if (step.status === 'running') {
+                            stepEl.classList.add('active');
+                        } else {
+                            stepEl.classList.add('pending');
+                        }
+                    }
+                });
+            }
+        }
+
+        function handleWorkflowComplete(status) {
+            if (status.status === 'complete') {
+                // Mark all steps as complete
+                document.querySelectorAll('.progress-step').forEach(el => {
+                    el.className = 'progress-step completed';
+                });
+
+                // Display complete processing result
+                if (status.output) {
+                    const resultHtml = `
+                        <div style="margin-top: 15px; padding: 15px; background: #d4edda; border-radius: 8px; border-left: 4px solid #28a745;">
+                            <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Processing Complete</h4>
+                            <details open>
+                                <summary style="cursor: pointer; color: #155724; font-weight: 500; margin-bottom: 8px;">View Complete Result</summary>
+                                <pre style="background: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 8px;">${JSON.stringify(status.output, null, 2)}</pre>
+                            </details>
+                        </div>
+                    `;
+                    document.getElementById('progressContainer').insertAdjacentHTML('beforeend', resultHtml);
+                }
+
+                showStatus(uploadStatus, 'success', 'File processed successfully! Check the result above. ✅');
+
+                // Reset form after a longer delay to allow viewing results
+                setTimeout(() => {
+                    uploadForm.reset();
+                    fileInfo.classList.remove('show');
+                    uploadBtn.disabled = true;
+                    document.getElementById('progressContainer').classList.remove('show');
+                    uploadStatus.classList.remove('show');
+                }, 10000);
+            } else if (status.status === 'error') {
+                showStatus(uploadStatus, 'error', `Processing failed: ${status.error || 'Unknown error'}`);
+                uploadBtn.disabled = false;
+            }
+        }
+
+        // Search function
+        async function searchFiles() {
+            const query = searchInput.value.trim();
+            if (!query) {
+                showStatus(searchStatus, 'error', 'Please enter a search query');
+                return;
+            }
+
+            searchLoader.classList.add('show');
+            searchStatus.className = 'status';
+            searchResults.innerHTML = '';
+
+            try {
+                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const result = await response.json();
+
+                searchLoader.classList.remove('show');
+
+                if (response.ok) {
+                    if (result.files && result.files.length > 0) {
+                        displayResults(result.files);
+                        showStatus(searchStatus, 'success', `Found ${result.files.length} file(s)`);
+                    } else {
+                        showStatus(searchStatus, 'info', 'No files found matching your query');
+                    }
+                } else {
+                    showStatus(searchStatus, 'error', `Error: ${result.error || 'Search failed'}`);
+                }
+            } catch (error) {
+                searchLoader.classList.remove('show');
+                showStatus(searchStatus, 'error', `Error: ${error.message}`);
+            }
+        }
+
+        // Enter key search
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchFiles();
+            }
+        });
+
+        function displayResults(files) {
+            searchResults.innerHTML = files.map(file => {
+                // Format metadata as pretty JSON
+                const metadataDisplay = file.metadata
+                    ? `<pre style="background: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 10px;">${JSON.stringify(file.metadata, null, 2)}</pre>`
+                    : '';
+
+                // Create collapsible complete object view
+                const completeObjectId = `obj-${file.id}`;
+                const completeObject = {
+                    id: file.id,
+                    filename: file.filename,
+                    content_type: file.content_type,
+                    file_type: file.file_type,
+                    size: file.size,
+                    sha256_hash: file.sha256_hash,
+                    ssdeep_hash: file.ssdeep_hash,
+                    r2_key: file.r2_key,
+                    metadata: file.metadata,
+                    created_at: file.created_at
+                };
+
+                return `
+                    <div class="result-item">
+                        <h3>${file.filename}</h3>
+                        <p><strong>Type:</strong> ${file.file_type || file.content_type || 'Unknown'}</p>
+                        <p><strong>Size:</strong> ${(file.size / 1024).toFixed(2)} KB</p>
+                        <p><strong>Uploaded:</strong> ${new Date(file.created_at).toLocaleString()}</p>
+                        <p class="hash"><strong>SHA-256:</strong> ${file.sha256_hash.substring(0, 48)}...</p>
+                        ${file.ssdeep_hash && file.ssdeep_hash !== 'ssdeep-failed' ? `<p class="hash"><strong>ssdeep:</strong> ${file.ssdeep_hash.substring(0, 48)}...</p>` : ''}
+
+                        ${file.metadata && (file.metadata.caption || file.metadata.summary) ? `
+                            <div style="margin-top: 12px; padding: 10px; background: #e7f3ff; border-radius: 6px;">
+                                ${file.metadata.caption ? `<p><strong>📸 Caption:</strong> ${file.metadata.caption}</p>` : ''}
+                                ${file.metadata.summary ? `<p><strong>📄 Summary:</strong> ${file.metadata.summary}</p>` : ''}
+                            </div>
+                        ` : ''}
+
+                        <details style="margin-top: 12px;">
+                            <summary style="cursor: pointer; color: #667eea; font-weight: 500;">View Complete Object</summary>
+                            <pre style="background: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 8px;">${JSON.stringify(completeObject, null, 2)}</pre>
+                        </details>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function showStatus(element, type, message) {
+            element.className = `status ${type} show`;
+            element.textContent = message;
+            setTimeout(() => {
+                element.classList.remove('show');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
