@@ -1,0 +1,47 @@
+# Wrangler Configuration
+# For more details: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "skydrive"
+main = "src/index.ts"
+compatibility_date = "2025-10-08"
+compatibility_flags = ["nodejs_compat"]
+
+[observability]
+enabled = true
+
+# Custom Domain
+[[routes]]
+pattern = "skydrive.omczero.com"
+custom_domain = true
+
+# CompiledWasm Rules
+[[rules]]
+type = "CompiledWasm"
+globs = ["**/*.wasm"]
+fallthrough = true
+
+# Static Assets
+[assets]
+directory = "./public/"
+binding = "ASSETS"
+
+# R2 Buckets
+[[r2_buckets]]
+binding = "FILE_BUCKET"
+bucket_name = "uploaded-files"
+
+# D1 Databases
+[[d1_databases]]
+binding = "DB"
+database_name = "file-metadata-db"
+database_id = "ca008c2a-c6ef-44fb-aa44-06e27da794ea"
+
+# Workers AI
+[ai]
+binding = "AI"
+
+# Workflows
+[[workflows]]
+name = "file-processing-workflow"
+binding = "FILE_WORKFLOW"
+class_name = "FileProcessingWorkflow"

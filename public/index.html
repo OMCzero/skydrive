@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Processor</title>
+    <title>SkyDrive</title>
     <style>
         * {
             margin: 0;
@@ -250,11 +250,34 @@
             font-size: 0.85rem;
             color: #666;
         }
+
+        .nav-links {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            margin: 0 15px;
+            font-size: 1rem;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: background 0.3s;
+        }
+
+        .nav-links a:hover {
+            background: rgba(255,255,255,0.2);
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>File Processor</h1>
+        <h1>SkyDrive</h1>
+        <div class="nav-links">
+            <a href="/admin">🔧 Admin</a>
+            <a href="/docs/architecture">📐 Architecture</a>
+        </div>
 
         <div class="card">
             <h2>Upload File</h2>
@@ -277,6 +300,13 @@
                 <h3 style="margin-bottom: 15px; color: #333;">Processing Progress</h3>
                 <div id="progressSteps"></div>
             </div>
+        </div>
+
+        <div class="card">
+            <h2>Recently Uploaded</h2>
+            <div class="loader" id="recentLoader"></div>
+            <div class="status" id="recentStatus"></div>
+            <div class="results" id="recentResults"></div>
         </div>
 
         <div class="card">
@@ -459,43 +489,6 @@
             }
         }
 
-        function handleWorkflowComplete(status) {
-            if (status.status === 'complete') {
-                // Mark all steps as complete
-                document.querySelectorAll('.progress-step').forEach(el => {
-                    el.className = 'progress-step completed';
-                });
-
-                // Display complete processing result
-                if (status.output) {
-                    const resultHtml = `
-                        <div style="margin-top: 15px; padding: 15px; background: #d4edda; border-radius: 8px; border-left: 4px solid #28a745;">
-                            <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Processing Complete</h4>
-                            <details open>
-                                <summary style="cursor: pointer; color: #155724; font-weight: 500; margin-bottom: 8px;">View Complete Result</summary>
-                                <pre style="background: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 8px;">${JSON.stringify(status.output, null, 2)}</pre>
-                            </details>
-                        </div>
-                    `;
-                    document.getElementById('progressContainer').insertAdjacentHTML('beforeend', resultHtml);
-                }
-
-                showStatus(uploadStatus, 'success', 'File processed successfully! Check the result above. ✅');
-
-                // Reset form after a longer delay to allow viewing results
-                setTimeout(() => {
-                    uploadForm.reset();
-                    fileInfo.classList.remove('show');
-                    uploadBtn.disabled = true;
-                    document.getElementById('progressContainer').classList.remove('show');
-                    uploadStatus.classList.remove('show');
-                }, 10000);
-            } else if (status.status === 'error') {
-                showStatus(uploadStatus, 'error', `Processing failed: ${status.error || 'Unknown error'}`);
-                uploadBtn.disabled = false;
-            }
-        }
-
         // Search function
         async function searchFiles() {
             const query = searchInput.value.trim();
@@ -537,8 +530,48 @@
             }
         });
 
-        function displayResults(files) {
-            searchResults.innerHTML = files.map(file => {
+        function showStatus(element, type, message) {
+            element.className = `status ${type} show`;
+            element.textContent = message;
+            setTimeout(() => {
+                element.classList.remove('show');
+            }, 5000);
+        }
+
+        // Load recent files on page load
+        const recentLoader = document.getElementById('recentLoader');
+        const recentStatus = document.getElementById('recentStatus');
+        const recentResults = document.getElementById('recentResults');
+
+        async function loadRecentFiles() {
+            recentLoader.classList.add('show');
+            recentStatus.className = 'status';
+            recentResults.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/recent');
+                const result = await response.json();
+
+                recentLoader.classList.remove('show');
+
+                if (response.ok) {
+                    if (result.files && result.files.length > 0) {
+                        displayResults(result.files, recentResults);
+                    } else {
+                        recentResults.innerHTML = '<p style="color: #999; text-align: center; padding: 20px;">No files uploaded yet</p>';
+                    }
+                } else {
+                    showStatus(recentStatus, 'error', `Error: ${result.error || 'Failed to load recent files'}`);
+                }
+            } catch (error) {
+                recentLoader.classList.remove('show');
+                showStatus(recentStatus, 'error', `Error: ${error.message}`);
+            }
+        }
+
+        // Update displayResults to accept a target element parameter
+        function displayResults(files, targetElement = searchResults) {
+            targetElement.innerHTML = files.map(file => {
                 // Format metadata as pretty JSON
                 const metadataDisplay = file.metadata
                     ? `<pre style="background: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 10px;">${JSON.stringify(file.metadata, null, 2)}</pre>`
@@ -584,12 +617,48 @@
             }).join('');
         }
 
-        function showStatus(element, type, message) {
-            element.className = `status ${type} show`;
-            element.textContent = message;
-            setTimeout(() => {
-                element.classList.remove('show');
-            }, 5000);
+        // Load recent files when page loads
+        loadRecentFiles();
+
+        // Update the workflow complete handler to refresh recent files
+        function handleWorkflowComplete(status) {
+            if (status.status === 'complete') {
+                // Mark all steps as complete
+                document.querySelectorAll('.progress-step').forEach(el => {
+                    el.className = 'progress-step completed';
+                });
+
+                // Display complete processing result
+                if (status.output) {
+                    const resultHtml = `
+                        <div style="margin-top: 15px; padding: 15px; background: #d4edda; border-radius: 8px; border-left: 4px solid #28a745;">
+                            <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Processing Complete</h4>
+                            <details open>
+                                <summary style="cursor: pointer; color: #155724; font-weight: 500; margin-bottom: 8px;">View Complete Result</summary>
+                                <pre style="background: #2d2d2d; color: #f8f8f2; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; margin-top: 8px;">${JSON.stringify(status.output, null, 2)}</pre>
+                            </details>
+                        </div>
+                    `;
+                    document.getElementById('progressContainer').insertAdjacentHTML('beforeend', resultHtml);
+                }
+
+                showStatus(uploadStatus, 'success', 'File processed successfully! Check the result above. ✅');
+
+                // Refresh recent files list
+                loadRecentFiles();
+
+                // Reset form after a longer delay to allow viewing results
+                setTimeout(() => {
+                    uploadForm.reset();
+                    fileInfo.classList.remove('show');
+                    uploadBtn.disabled = true;
+                    document.getElementById('progressContainer').classList.remove('show');
+                    uploadStatus.classList.remove('show');
+                }, 10000);
+            } else if (status.status === 'error') {
+                showStatus(uploadStatus, 'error', `Processing failed: ${status.error || 'Unknown error'}`);
+                uploadBtn.disabled = false;
+            }
         }
     </script>
 </body>
