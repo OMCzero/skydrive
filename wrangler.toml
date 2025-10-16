@@ -40,8 +40,19 @@ database_id = "ca008c2a-c6ef-44fb-aa44-06e27da794ea"
 [ai]
 binding = "AI"
 
+# Environment Variables
+[vars]
+# Cloudflare Access settings - JWT validation enabled for security
+TEAM_DOMAIN = "https://omczero.cloudflareaccess.com"
+POLICY_AUD = "731fcf0e7df6523ef3214317c501030cbdbafd70142af879cb8b9d65fafe5b91"
+
 # Workflows
 [[workflows]]
 name = "file-processing-workflow"
 binding = "FILE_WORKFLOW"
 class_name = "FileProcessingWorkflow"
+
+[[workflows]]
+name = "file-reprocessing-workflow"
+binding = "REPROCESS_WORKFLOW"
+class_name = "FileReprocessingWorkflow"

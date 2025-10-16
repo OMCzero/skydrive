@@ -269,6 +269,116 @@
         .nav-links a:hover {
             background: rgba(255,255,255,0.2);
         }
+
+        .file-actions {
+            margin-top: 12px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-preview {
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .btn-preview:hover {
+            background: #218838;
+        }
+
+        .btn-download {
+            padding: 8px 16px;
+            background: #17a2b8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .btn-download:hover {
+            background: #138496;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            overflow: auto;
+        }
+
+        .modal.show {
+            display: block;
+        }
+
+        .modal-content {
+            position: relative;
+            background: white;
+            margin: 2% auto;
+            padding: 20px;
+            width: 90%;
+            max-width: 1200px;
+            border-radius: 12px;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.5);
+        }
+
+        .modal-close {
+            position: absolute;
+            right: 20px;
+            top: 15px;
+            font-size: 2rem;
+            font-weight: bold;
+            color: #999;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .modal-close:hover {
+            color: #333;
+        }
+
+        .preview-container {
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .preview-container img {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .preview-container iframe {
+            width: 100%;
+            height: 70vh;
+            border: none;
+            border-radius: 8px;
+        }
+
+        .preview-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            text-align: left;
+        }
+
+        .preview-info p {
+            margin: 5px 0;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -318,6 +428,16 @@
             <div class="loader" id="searchLoader"></div>
             <div class="status" id="searchStatus"></div>
             <div class="results" id="searchResults"></div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="previewModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closePreview()">&times;</span>
+            <h2 id="modalTitle"></h2>
+            <div class="preview-info" id="previewInfo"></div>
+            <div class="preview-container" id="previewContainer"></div>
         </div>
     </div>
 
@@ -387,12 +507,49 @@
             { id: 'save-metadata-to-d1', label: 'Saving metadata', icon: '💾' }
         ];
 
+        // Helper function to calculate SHA-256 hash of a file in the browser
+        async function calculateFileHash(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+
+        // Helper function to display duplicate file info
+        function showDuplicateInfo(existingFile) {
+            const uploadDate = new Date(existingFile.createdAt).toLocaleString();
+
+            uploadStatus.className = 'status info show';
+            uploadStatus.innerHTML = `
+                <div style="text-align: left;">
+                    <strong>⚠️ Duplicate File Detected</strong>
+                    <p style="margin: 10px 0;">This file has already been uploaded (detected before upload via hash check):</p>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li><strong>Original filename:</strong> ${existingFile.filename}</li>
+                        <li><strong>Uploaded:</strong> ${uploadDate}</li>
+                        <li><strong>Size:</strong> ${(existingFile.size / 1024).toFixed(2)} KB</li>
+                        <li><strong>Type:</strong> ${existingFile.fileType || existingFile.contentType}</li>
+                    </ul>
+                    ${existingFile.metadata && (existingFile.metadata.caption || existingFile.metadata.summary) ? `
+                        <div style="margin: 10px 0; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 6px;">
+                            ${existingFile.metadata.caption ? `<p><strong>📸 Caption:</strong> ${existingFile.metadata.caption}</p>` : ''}
+                            ${existingFile.metadata.summary ? `<p><strong>📄 Summary:</strong> ${existingFile.metadata.summary.substring(0, 150)}${existingFile.metadata.summary.length > 150 ? '...' : ''}</p>` : ''}
+                        </div>
+                    ` : ''}
+                    <div style="margin-top: 12px;">
+                        <button class="btn-preview" onclick="previewFile('${existingFile.id}', '${existingFile.filename}', '${existingFile.fileType || existingFile.contentType}', ${existingFile.size})" style="margin-right: 8px;">👁️ View File</button>
+                        <button class="btn-download" onclick="downloadFile('${existingFile.id}', '${existingFile.filename}')">⬇️ Download</button>
+                    </div>
+                </div>
+            `;
+        }
+
         // Upload form handler
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+            const file = fileInput.files[0];
 
             uploadBtn.disabled = true;
             uploadLoader.classList.add('show');
@@ -401,6 +558,36 @@
             document.getElementById('progressSteps').innerHTML = '';
 
             try {
+                // Step 1: Calculate hash in browser (before uploading)
+                showStatus(uploadStatus, 'info', '🔐 Calculating file hash...');
+                const fileHash = await calculateFileHash(file);
+                console.log(`File hash (browser-side): ${fileHash.substring(0, 16)}...`);
+
+                // Step 2: Check if hash exists on server
+                showStatus(uploadStatus, 'info', '🔍 Checking for duplicates...');
+                const hashCheckResponse = await fetch('/api/check-hash', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ hash: fileHash })
+                });
+
+                const hashCheckResult = await hashCheckResponse.json();
+
+                if (hashCheckResult.exists) {
+                    // Duplicate found - don't upload the file!
+                    console.log('Duplicate detected, skipping upload');
+                    uploadLoader.classList.remove('show');
+                    showDuplicateInfo(hashCheckResult.file);
+                    uploadBtn.disabled = false;
+                    return;
+                }
+
+                // Step 3: No duplicate found - proceed with upload
+                showStatus(uploadStatus, 'info', '📤 Uploading file...');
+
+                const formData = new FormData();
+                formData.append('file', file);
+
                 const response = await fetch('/api/upload', {
                     method: 'POST',
                     body: formData
@@ -416,6 +603,10 @@
                     // Start tracking workflow progress
                     currentWorkflowId = result.workflowInstanceId;
                     initProgressTracking(currentWorkflowId);
+                } else if (response.status === 409 && result.duplicate) {
+                    // Handle duplicate file (backup check on server side)
+                    showDuplicateInfo(result.existingFile);
+                    uploadBtn.disabled = false;
                 } else {
                     showStatus(uploadStatus, 'error', `Error: ${result.error || 'Upload failed'}`);
                     uploadBtn.disabled = false;
@@ -597,7 +788,7 @@
                         <h3>${file.filename}</h3>
                         <p><strong>Type:</strong> ${file.file_type || file.content_type || 'Unknown'}</p>
                         <p><strong>Size:</strong> ${(file.size / 1024).toFixed(2)} KB</p>
-                        <p><strong>Uploaded:</strong> ${new Date(file.created_at).toLocaleString()}</p>
+                        <p><strong>Uploaded:</strong> ${new Date(file.created_at).toLocaleString()}${file.uploaded_by ? ` by <strong>${file.uploaded_by}</strong>` : ''}</p>
                         <p class="hash"><strong>SHA-256:</strong> ${file.sha256_hash.substring(0, 48)}...</p>
                         ${file.ssdeep_hash && file.ssdeep_hash !== 'ssdeep-failed' ? `<p class="hash"><strong>ssdeep:</strong> ${file.ssdeep_hash.substring(0, 48)}...</p>` : ''}
 
@@ -607,6 +798,11 @@
                                 ${file.metadata.summary ? `<p><strong>📄 Summary:</strong> ${file.metadata.summary}</p>` : ''}
                             </div>
                         ` : ''}
+
+                        <div class="file-actions">
+                            <button class="btn-preview" onclick="previewFile('${file.id}', '${file.filename}', '${file.file_type || file.content_type}', ${file.size})">👁️ Preview</button>
+                            <button class="btn-download" onclick="downloadFile('${file.id}', '${file.filename}')">⬇️ Download</button>
+                        </div>
 
                         <details style="margin-top: 12px;">
                             <summary style="cursor: pointer; color: #667eea; font-weight: 500;">View Complete Object</summary>
@@ -660,6 +856,110 @@
                 uploadBtn.disabled = false;
             }
         }
+
+        // File preview and download functions
+        function previewFile(fileId, filename, fileType, fileSize) {
+            const modal = document.getElementById('previewModal');
+            const modalTitle = document.getElementById('modalTitle');
+            const previewInfo = document.getElementById('previewInfo');
+            const previewContainer = document.getElementById('previewContainer');
+
+            // Set title and info
+            modalTitle.textContent = filename;
+            previewInfo.innerHTML = `
+                <p><strong>Type:</strong> ${fileType}</p>
+                <p><strong>Size:</strong> ${(fileSize / 1024).toFixed(2)} KB</p>
+            `;
+
+            // Clear previous preview
+            previewContainer.innerHTML = '<div class="loader show"></div>';
+
+            // Show modal
+            modal.classList.add('show');
+
+            // Generate preview based on file type
+            const fileUrl = `/api/files/${fileId}`;
+            const lowerFileType = fileType.toLowerCase();
+
+            if (lowerFileType.includes('image') || lowerFileType.includes('png') || lowerFileType.includes('jpg') || lowerFileType.includes('jpeg') || lowerFileType.includes('gif') || lowerFileType.includes('webp')) {
+                // Image preview
+                previewContainer.innerHTML = `<img src="${fileUrl}" alt="${filename}" onload="this.style.opacity=1" style="opacity:0; transition: opacity 0.3s;" onerror="this.parentElement.innerHTML='<p style=color:#999>Failed to load image</p>'">`;
+            } else if (lowerFileType.includes('pdf')) {
+                // PDF preview
+                previewContainer.innerHTML = `<iframe src="${fileUrl}" type="application/pdf"></iframe>`;
+            } else if (lowerFileType.includes('text') || lowerFileType.includes('javascript') || lowerFileType.includes('json') || lowerFileType.includes('xml') || lowerFileType.includes('html') || lowerFileType.includes('css')) {
+                // Text file preview
+                fetch(fileUrl)
+                    .then(response => response.text())
+                    .then(text => {
+                        previewContainer.innerHTML = `<pre style="background: #2d2d2d; color: #f8f8f2; padding: 20px; border-radius: 8px; overflow: auto; max-height: 70vh; text-align: left;">${escapeHtml(text)}</pre>`;
+                    })
+                    .catch(error => {
+                        previewContainer.innerHTML = `<p style="color: #999;">Failed to load text file: ${error.message}</p>`;
+                    });
+            } else if (lowerFileType.includes('video')) {
+                // Video preview
+                previewContainer.innerHTML = `<video controls style="max-width: 100%; max-height: 70vh; border-radius: 8px;"><source src="${fileUrl}" type="${fileType}">Your browser does not support video playback.</video>`;
+            } else if (lowerFileType.includes('audio')) {
+                // Audio preview
+                previewContainer.innerHTML = `
+                    <div style="padding: 40px;">
+                        <audio controls style="width: 100%;">
+                            <source src="${fileUrl}" type="${fileType}">
+                            Your browser does not support audio playback.
+                        </audio>
+                    </div>
+                `;
+            } else {
+                // Unsupported type - show download option
+                previewContainer.innerHTML = `
+                    <div style="padding: 40px; text-align: center;">
+                        <p style="color: #999; margin-bottom: 20px;">Preview not available for this file type</p>
+                        <button class="btn-download" onclick="downloadFile('${fileId}', '${filename}')">⬇️ Download File</button>
+                    </div>
+                `;
+            }
+        }
+
+        function downloadFile(fileId, filename) {
+            const link = document.createElement('a');
+            link.href = `/api/files/${fileId}`;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function closePreview() {
+            const modal = document.getElementById('previewModal');
+            modal.classList.remove('show');
+            // Clear preview content after modal closes
+            setTimeout(() => {
+                document.getElementById('previewContainer').innerHTML = '';
+            }, 300);
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('previewModal');
+            if (event.target === modal) {
+                closePreview();
+            }
+        }
+
+        // Escape HTML for text preview
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closePreview();
+            }
+        });
     </script>
 </body>
 </html>

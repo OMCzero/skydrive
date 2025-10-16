@@ -1,2 +1,3 @@
 - Remember to update the /docs/architecture document when updating the document processing steps
 - Use the Cloudflare Docs MCP when unsure about a Cloudflare feature, cost, or limit.
+- Do not test endpoints, as they are protected and you will not be able to reach them.

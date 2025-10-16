@@ -421,7 +421,117 @@ flowchart TD
                 <li>Detailed error messages for failed operations</li>
                 <li>Statistics (total files, total storage used)</li>
                 <li>Bulk operations support</li>
+                <li><strong>Metadata Health Check</strong> - Scan for files with outdated or missing metadata</li>
+                <li><strong>Reprocessing</strong> - Selectively update metadata without re-uploading files</li>
             </ul>
+        </div>
+
+        <div class="card">
+            <h2>🔄 Metadata Backfilling System</h2>
+
+            <h3>Overview</h3>
+            <p>SkyDrive includes a metadata backfilling system that allows you to update file metadata when:</p>
+            <ul>
+                <li>New processing features are added (e.g., OCR for PDFs)</li>
+                <li>Schema versions are updated with new required fields</li>
+                <li>Files were uploaded before certain features existed</li>
+                <li>Processing failed and needs to be retried</li>
+            </ul>
+
+            <h3>Schema Versioning</h3>
+            <p>Each file type has a schema version stored in metadata (<code>_schemaVersion</code>):</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>File Type</th>
+                        <th>Current Version</th>
+                        <th>Required Fields</th>
+                        <th>Optional Fields</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>PDF</td>
+                        <td>v2</td>
+                        <td>rawText, summary, ocrPerformed</td>
+                        <td>pageCount, author, title</td>
+                    </tr>
+                    <tr>
+                        <td>PNG/JPG/JPEG</td>
+                        <td>v1</td>
+                        <td>caption</td>
+                        <td>dimensions, colorSpace, exifData</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>Reprocessing Workflow</h3>
+            <p>The reprocessing workflow (<code>FileReprocessingWorkflow</code>) performs selective updates:</p>
+            <ol>
+                <li><strong>Fetch File:</strong> Retrieves file from R2 and metadata from D1</li>
+                <li><strong>Detect Missing Fields:</strong> Compares metadata against current schema</li>
+                <li><strong>Selective Processing:</strong> Only processes missing/outdated fields
+                    <ul>
+                        <li>PDF: Re-extract text if <code>rawText</code> missing, perform OCR if needed, regenerate <code>summary</code></li>
+                        <li>Image: Re-caption with Moondream if <code>caption</code> missing</li>
+                    </ul>
+                </li>
+                <li><strong>Merge Metadata:</strong> Preserves existing fields, adds new fields</li>
+                <li><strong>Update D1:</strong> Stores updated metadata with current schema version</li>
+            </ol>
+
+            <div class="info-box">
+                <strong>ℹ️ No Re-Upload Required:</strong> Reprocessing fetches files from R2 storage - you don't need to re-upload files to update their metadata.
+            </div>
+
+            <h3>Admin Workflow</h3>
+            <ol>
+                <li><strong>Scan:</strong> Click "Scan for Outdated Files" in admin dashboard</li>
+                <li><strong>Review:</strong> See breakdown by issue type:
+                    <ul>
+                        <li>Missing Schema Version: Files from before versioning was added</li>
+                        <li>Outdated Schema: Files with old schema version</li>
+                        <li>Missing Fields: Files missing required fields</li>
+                    </ul>
+                </li>
+                <li><strong>Reprocess:</strong>
+                    <ul>
+                        <li>Individual: Click "Reprocess" button for specific files</li>
+                        <li>Batch: Click "Reprocess All" to update all outdated files</li>
+                    </ul>
+                </li>
+                <li><strong>Monitor:</strong> Reprocessing runs as a background workflow - check status in logs</li>
+            </ol>
+
+            <div class="warning-box">
+                <strong>⚠️ Cost Considerations:</strong> Reprocessing triggers AI model inferences (OCR, captioning, summarization). For PDFs with many pages requiring OCR, costs can add up. Review the breakdown before batch reprocessing.
+            </div>
+
+            <h3>API Endpoints</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Endpoint</th>
+                        <th>Method</th>
+                        <th>Description</th>
+                        <th>Response</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>/api/admin/scan-metadata</code></td>
+                        <td>POST</td>
+                        <td>Scan all files for metadata issues</td>
+                        <td>List of files needing reprocessing with reasons and breakdown</td>
+                    </tr>
+                    <tr>
+                        <td><code>/api/admin/reprocess/:fileId</code></td>
+                        <td>POST</td>
+                        <td>Start reprocessing workflow for a file</td>
+                        <td>Workflow instance ID and fields to reprocess</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </body>

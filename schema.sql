@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS files (
   ssdeep_hash TEXT,
   r2_key TEXT NOT NULL,
   metadata JSON, -- Store all processing metadata as JSON
+  uploaded_by TEXT, -- Email of user who uploaded (from Cloudflare Access JWT)
   created_at INTEGER NOT NULL
 );
 
@@ -19,3 +20,4 @@ CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256_hash);
 CREATE INDEX IF NOT EXISTS idx_files_filename ON files(filename);
 CREATE INDEX IF NOT EXISTS idx_files_ssdeep ON files(ssdeep_hash);
 CREATE INDEX IF NOT EXISTS idx_files_created ON files(created_at);
+CREATE INDEX IF NOT EXISTS idx_files_uploaded_by ON files(uploaded_by);

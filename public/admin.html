@@ -260,6 +260,68 @@
 
         <div class="card">
             <div class="controls">
+                <h2 style="margin: 0;">📊 Metadata Health Check</h2>
+                <button onclick="scanMetadata()">🔍 Scan for Outdated Files</button>
+            </div>
+
+            <div class="loader" id="scanLoader"></div>
+            <div class="status" id="scanStatus"></div>
+
+            <div id="healthContainer" style="display: none;">
+                <div class="stats" style="margin: 20px 0;">
+                    <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+                        <div class="stat-value" id="healthyCount">-</div>
+                        <div class="stat-label">Up to Date</div>
+                    </div>
+                    <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);">
+                        <div class="stat-value" id="outdatedCount">-</div>
+                        <div class="stat-label">Need Reprocessing</div>
+                    </div>
+                </div>
+
+                <div id="breakdownContainer" style="margin: 20px 0; display: none;">
+                    <h3 style="color: #333; margin-bottom: 15px;">Breakdown by Issue:</h3>
+                    <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                        <div style="padding: 12px 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #ffc107;">
+                            <div style="font-weight: 600; color: #333;">Missing Schema Version</div>
+                            <div style="font-size: 1.5rem; color: #667eea;" id="noSchemaCount">0</div>
+                        </div>
+                        <div style="padding: 12px 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #fd7e14;">
+                            <div style="font-weight: 600; color: #333;">Outdated Schema</div>
+                            <div style="font-size: 1.5rem; color: #667eea;" id="schemaOutdatedCount">0</div>
+                        </div>
+                        <div style="padding: 12px 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #dc3545;">
+                            <div style="font-weight: 600; color: #333;">Missing Fields</div>
+                            <div style="font-size: 1.5rem; color: #667eea;" id="missingFieldsCount">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="outdatedFilesContainer" style="display: none; margin-top: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="color: #333; margin: 0;">Files Needing Reprocessing:</h3>
+                        <button onclick="reprocessAll()" id="reprocessAllBtn">🔄 Reprocess All</button>
+                    </div>
+                    <table id="outdatedFilesTable">
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Type</th>
+                                <th>Issue</th>
+                                <th>Missing Fields</th>
+                                <th>Version</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="outdatedFilesBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="controls">
                 <h2 style="margin: 0;">All Files</h2>
                 <button onclick="refreshFiles()">🔄 Refresh</button>
             </div>
@@ -556,6 +618,191 @@
                 const more = errorDetails.length > 3 ? ` and ${errorDetails.length - 3} more` : '';
                 showStatus('error', `Deleted ${successCount} file(s), ${failCount} failed: ${errorList}${more}`);
             }
+        }
+
+        // Metadata Health Check Functions
+        let outdatedFilesData = [];
+
+        async function scanMetadata() {
+            const scanLoader = document.getElementById('scanLoader');
+            const scanStatus = document.getElementById('scanStatus');
+            const healthContainer = document.getElementById('healthContainer');
+
+            scanLoader.classList.add('show');
+            scanStatus.className = 'status';
+            healthContainer.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/admin/scan-metadata', {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                scanLoader.classList.remove('show');
+
+                if (response.ok) {
+                    outdatedFilesData = result.needsReprocessing || [];
+                    displayHealthResults(result);
+                    healthContainer.style.display = 'block';
+
+                    if (result.count === 0) {
+                        showScanStatus('success', '✅ All files have up-to-date metadata!');
+                    } else {
+                        showScanStatus('info', `Found ${result.count} file(s) needing reprocessing`);
+                    }
+                } else {
+                    showScanStatus('error', `Error: ${result.error || 'Failed to scan metadata'}`);
+                }
+            } catch (error) {
+                scanLoader.classList.remove('show');
+                showScanStatus('error', `Error: ${error.message}`);
+            }
+        }
+
+        function displayHealthResults(result) {
+            const healthyCount = result.totalFiles - result.count;
+            document.getElementById('healthyCount').textContent = healthyCount;
+            document.getElementById('outdatedCount').textContent = result.count;
+
+            // Show breakdown if there are issues
+            const breakdownContainer = document.getElementById('breakdownContainer');
+            if (result.count > 0 && result.breakdown) {
+                document.getElementById('noSchemaCount').textContent = result.breakdown.no_schema_version || 0;
+                document.getElementById('schemaOutdatedCount').textContent = result.breakdown.schema_outdated || 0;
+                document.getElementById('missingFieldsCount').textContent = result.breakdown.missing_fields || 0;
+                breakdownContainer.style.display = 'block';
+            } else {
+                breakdownContainer.style.display = 'none';
+            }
+
+            // Show outdated files table if there are issues
+            const outdatedFilesContainer = document.getElementById('outdatedFilesContainer');
+            if (result.count > 0 && result.needsReprocessing) {
+                displayOutdatedFiles(result.needsReprocessing);
+                outdatedFilesContainer.style.display = 'block';
+            } else {
+                outdatedFilesContainer.style.display = 'none';
+            }
+        }
+
+        function displayOutdatedFiles(files) {
+            const tbody = document.getElementById('outdatedFilesBody');
+            tbody.innerHTML = files.map(file => `
+                <tr>
+                    <td><strong>${file.filename}</strong></td>
+                    <td>${file.fileType}</td>
+                    <td>${formatReason(file.reason)}</td>
+                    <td>${file.missingFields.join(', ') || '-'}</td>
+                    <td>${formatVersion(file.currentVersion, file.expectedVersion)}</td>
+                    <td>
+                        <button class="btn-small" onclick="reprocessFile('${file.fileId}', '${file.filename}')">🔄 Reprocess</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function formatReason(reason) {
+            const reasons = {
+                'no_schema_version': '⚠️ No Schema Version',
+                'schema_outdated': '📅 Outdated Schema',
+                'missing_fields': '❌ Missing Fields'
+            };
+            return reasons[reason] || reason;
+        }
+
+        function formatVersion(current, expected) {
+            if (current === undefined || current === null) {
+                return `None → v${expected}`;
+            }
+            return `v${current} → v${expected}`;
+        }
+
+        async function reprocessFile(fileId, filename) {
+            if (!confirm(`Reprocess metadata for "${filename}"?\n\nThis will update missing or outdated fields.`)) {
+                return;
+            }
+
+            showScanStatus('info', `Starting reprocessing for "${filename}"...`);
+
+            try {
+                const response = await fetch(`/api/admin/reprocess/${fileId}`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showScanStatus('success', `Reprocessing started for "${filename}". Fields: ${result.fieldsToReprocess.join(', ')}`);
+
+                    // Remove from outdated files list
+                    outdatedFilesData = outdatedFilesData.filter(f => f.fileId !== fileId);
+                    displayOutdatedFiles(outdatedFilesData);
+
+                    // Update counts
+                    const outdatedCount = parseInt(document.getElementById('outdatedCount').textContent);
+                    const healthyCount = parseInt(document.getElementById('healthyCount').textContent);
+                    document.getElementById('outdatedCount').textContent = outdatedCount - 1;
+                    document.getElementById('healthyCount').textContent = healthyCount + 1;
+
+                    if (outdatedFilesData.length === 0) {
+                        document.getElementById('outdatedFilesContainer').style.display = 'none';
+                        document.getElementById('breakdownContainer').style.display = 'none';
+                    }
+                } else {
+                    showScanStatus('error', `Error reprocessing "${filename}": ${result.error || result.message}`);
+                }
+            } catch (error) {
+                showScanStatus('error', `Error reprocessing "${filename}": ${error.message}`);
+            }
+        }
+
+        async function reprocessAll() {
+            if (outdatedFilesData.length === 0) return;
+
+            const count = outdatedFilesData.length;
+            if (!confirm(`Reprocess metadata for ${count} file(s)?\n\nThis will update missing or outdated fields for all files.`)) {
+                return;
+            }
+
+            let successCount = 0;
+            let failCount = 0;
+            const failedFiles = [];
+
+            for (const file of outdatedFilesData) {
+                try {
+                    const response = await fetch(`/api/admin/reprocess/${file.fileId}`, {
+                        method: 'POST'
+                    });
+                    const result = await response.json();
+
+                    if (response.ok && result.success) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                        failedFiles.push(file.filename);
+                    }
+                } catch (error) {
+                    failCount++;
+                    failedFiles.push(file.filename);
+                }
+            }
+
+            // Refresh the scan after batch reprocessing
+            if (failCount === 0) {
+                showScanStatus('success', `Successfully started reprocessing for ${successCount} file(s)`);
+                setTimeout(() => scanMetadata(), 2000);
+            } else {
+                showScanStatus('error', `Started reprocessing for ${successCount} file(s), ${failCount} failed: ${failedFiles.slice(0, 3).join(', ')}${failedFiles.length > 3 ? '...' : ''}`);
+                setTimeout(() => scanMetadata(), 2000);
+            }
+        }
+
+        function showScanStatus(type, message) {
+            const scanStatus = document.getElementById('scanStatus');
+            scanStatus.className = `status ${type} show`;
+            scanStatus.textContent = message;
+            setTimeout(() => {
+                scanStatus.classList.remove('show');
+            }, 5000);
         }
 
         // Load files on page load

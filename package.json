@@ -13,6 +13,7 @@
 		"wrangler": "^4.43.0"
 	},
 	"dependencies": {
+		"jose": "^6.1.0",
 		"magika": "^0.4.0",
 		"marked": "^16.4.0",
 		"mermaid": "^11.12.0",
